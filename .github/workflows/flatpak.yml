@@ -96,6 +96,23 @@ jobs:
           flatpak-builder --user --force-clean --disable-rofiles-fuse \
             --repo=repo build org.bettershot.Bettershot.yml
 
+      # flatpak-builder reports an appstreamcli failure as a one-line summary
+      # and points at a report it does not print. Re-run the compose by hand to
+      # get the actual complaint.
+      - name: AppStream compose report
+        if: failure()
+        run: |
+          sudo apt-get install -y appstream
+          cd packaging/flatpak
+          echo "--- what is in the build result ---"
+          find build/files/share -maxdepth 4 \( -name '*.svg' -o -name '*.xml' \
+            -o -name '*.desktop' \) -printf '%s\t%p\n' || true
+          echo "--- compose ---"
+          appstreamcli compose --verbose --no-net \
+            --prefix=/ --origin=bettershot \
+            --result-root=/tmp/as --data-dir=/tmp/as/data --icons-dir=/tmp/as/icons \
+            build/files 2>&1 | tail -40 || true
+
       # A manifest can build and still install nothing useful, so check the
       # binary and the desktop metadata actually landed in the result.
       - name: Check what the build produced
