@@ -417,6 +417,17 @@ mod tests {
         assert_eq!(decoded.format(), Some(image::ImageFormat::Jpeg));
     }
 
+    /// Unix only, and deliberately so: this needs a shell command that copies
+    /// stdin to a file byte for byte, and `cmd.exe` has no reliable one —
+    /// `more` is a text pager that mangles binary. The test previously used
+    /// `cat`, which exists on a Windows runner only because Git bundles it, so
+    /// it passed or failed depending on PATH. `copy-command` is a workaround
+    /// for Wayland sessions where no in-process clipboard API works; Windows
+    /// has a working clipboard and does not need it.
+    ///
+    /// The cross-platform half — that a failing command is reported rather
+    /// than swallowed — is covered below and runs everywhere.
+    #[cfg(unix)]
     #[test]
     fn a_copy_command_receives_the_png_on_stdin() {
         let dir = tempfile::tempdir().expect("tempdir");
