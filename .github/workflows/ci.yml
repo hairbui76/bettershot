@@ -1,0 +1,141 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+  # Called by the release workflow, so a tag can never publish something that
+  # would not have passed CI.
+  workflow_call:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: -D warnings
+
+jobs:
+  test:
+    name: Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows and macOS regressions are invisible on a Linux dev machine,
+        # so both are required checks rather than occasional ones. macOS has no
+        # capture backend yet (Phase 5) but the stub must keep compiling, and
+        # the editor itself is portable.
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      # winit/egui dlopen most of these at runtime, but the capture backends
+      # and the clipboard need the development packages at build time.
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev libwayland-dev libxcb1-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev \
+            libdbus-1-dev pkg-config \
+            libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Format
+        run: cargo fmt --all -- --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      # The tray is behind a feature because it needs GTK on Linux. CI has
+      # those packages, so this is where that code path gets compiled.
+      - name: Build with the tray feature
+        run: cargo clippy -p bettershot --features tray --all-targets -- -D warnings
+
+  # The library crates must keep compiling for every target we claim to
+  # support, including ones we have no runner for. This catches a `cfg` that
+  # only holds on the host long before anyone tries to package a release.
+  cross-targets:
+    name: Cross-compile check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc, aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+      - name: Install Linux dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb1-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config
+      - name: Check for Windows
+        run: cargo check --workspace --target x86_64-pc-windows-msvc
+      - name: Check the libraries for macOS
+        run: |
+          cargo check --target aarch64-apple-darwin \
+            -p bettershot-core -p bettershot-capture -p bettershot-render -p bettershot-cli
+      # The binary too, including the menu-bar/tray code. Notifications are
+      # excluded because `notify-rust` pulls `mac-notification-sys`, whose
+      # build script needs the Apple SDK; the macos-latest job covers that.
+      - name: Check the binary for macOS
+        run: |
+          cargo check --target aarch64-apple-darwin -p bettershot \
+            --no-default-features --features tray
+
+  # `Satty/` is an upstream reference checkout. It must never be built, and
+  # never committed into this repository's history.
+  reference-untouched:
+    name: Satty reference untouched
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assert the reference checkout is not vendored
+        run: |
+          if git ls-files --error-unmatch Satty >/dev/null 2>&1; then
+            echo "::error::Satty/ must stay out of version control (see .gitignore)"
+            exit 1
+          fi
+          echo "Satty/ is correctly untracked."
+
+  build:
+    name: Release build (${{ matrix.os }})
+    needs: test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev libwayland-dev libxcb1-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev \
+            libdbus-1-dev pkg-config \
+            libgtk-3-dev libayatana-appindicator3-dev
+
+      - name: Build
+        run: cargo build --release -p bettershot --features tray
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bettershot-${{ runner.os }}
+          path: |
+            target/release/bettershot
+            target/release/bettershot.exe
+          if-no-files-found: error

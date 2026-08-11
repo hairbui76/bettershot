@@ -1,0 +1,129 @@
+name: Release
+
+# Builds and publishes artefacts for a version tag.
+#
+# What this does NOT do, because it needs credentials this repository does not
+# hold: sign the Windows installer with an Authenticode certificate, or
+# notarize the macOS bundle with an Apple Developer ID. Both are manual steps —
+# see packaging/README.md and docs/release-checklist.md. The artefacts produced
+# here are unsigned, and the release is created as a draft so that nothing is
+# published until a human has signed them and walked the checklist.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # Never publish a tag that would not have passed CI.
+  verify:
+    name: Verify
+    uses: ./.github/workflows/ci.yml
+
+  build:
+    name: Build (${{ matrix.target }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            archive: tar.gz
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            archive: zip
+          - os: macos-latest
+            target: aarch64-apple-darwin
+            archive: tar.gz
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            archive: tar.gz
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxkbcommon-dev libwayland-dev libxcb1-dev \
+            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev \
+            libdbus-1-dev pkg-config \
+            libgtk-3-dev libayatana-appindicator3-dev
+
+      # Distribution builds include the tray; it is only opt-in because
+      # building it needs GTK development packages.
+      - name: Build
+        run: cargo build --release -p bettershot --features tray --target ${{ matrix.target }}
+
+      - name: Stage the archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          staging="bettershot-${GITHUB_REF_NAME}-${{ matrix.target }}"
+          mkdir -p "$staging"
+          if [ "${{ runner.os }}" = "Windows" ]; then
+            cp "target/${{ matrix.target }}/release/bettershot.exe" "$staging/"
+          else
+            cp "target/${{ matrix.target }}/release/bettershot" "$staging/"
+          fi
+          cp LICENSE README.md "$staging/"
+
+          # build.rs writes the manpage and completions into OUT_DIR.
+          out=$(find "target/${{ matrix.target }}/release/build" -name 'bettershot.1' -print -quit || true)
+          if [ -n "$out" ]; then
+            cp -r "$(dirname "$out")/completions" "$staging/" || true
+            cp "$out" "$staging/" || true
+          fi
+
+          if [ "${{ matrix.archive }}" = "zip" ]; then
+            7z a "$staging.zip" "$staging"
+          else
+            tar czf "$staging.tar.gz" "$staging"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bettershot-${{ matrix.target }}
+          path: |
+            bettershot-*.tar.gz
+            bettershot-*.zip
+          if-no-files-found: error
+
+  draft-release:
+    name: Draft release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      # Draft, not published: the Windows installer still has to be signed and
+      # the macOS bundle notarized before anyone should download these.
+      - uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          generate_release_notes: true
+          files: artifacts/*
+          body: |
+            > **Unsigned build.** The Windows installer is not yet
+            > Authenticode-signed and the macOS bundle is not yet notarized.
+            > Complete those steps and walk `docs/release-checklist.md` before
+            > publishing this draft.
