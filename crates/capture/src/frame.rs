@@ -22,7 +22,19 @@ pub struct RawFrame {
     pub width: u32,
     /// Height in physical pixels.
     pub height: u32,
-    /// RGBA8, row-major, `len == width * height * 4`.
+    /// RGBA8, row-major, **straight (non-premultiplied)** alpha,
+    /// `len == width * height * 4`.
+    ///
+    /// Straight is the whole pipeline's convention, not just this type's: PNG
+    /// stores straight RGBA8 and `bettershot_render`'s canvas is straight so
+    /// that encode/decode round-trips stay bit-exact (premultiplying would
+    /// destroy that for translucent pixels). A backend handed premultiplied
+    /// pixels by the OS must convert here, or every consumer downstream will
+    /// apply alpha twice.
+    ///
+    /// In practice a screenshot is opaque, where the two representations
+    /// coincide; the difference only shows up on translucent window edges and
+    /// in the transparent gaps [`stitch`] leaves between monitors.
     pub data: Vec<u8>,
     /// Top-left corner on the virtual desktop, in physical pixels. Negative
     /// values are normal on multi-monitor layouts.

@@ -154,10 +154,7 @@ pub mod pixels;
 pub mod target;
 pub mod window;
 
-pub use backend::{
-    CaptureBackend, backend_for, capture_after, capture_after_including_cursor, default_backend,
-    draw_cursor_into,
-};
+pub use backend::{CaptureBackend, backend_for, capture_after, default_backend, draw_cursor_into};
 pub use cursor::{CursorAnchor, CursorImage, composite_cursor};
 pub use env::{BackendChoice, BackendSelection, Environment, TargetOs, select_backend};
 pub use error::{CaptureError, classify_portal_error};

@@ -83,9 +83,11 @@ pub struct CursorImage {
     pub height: u32,
     /// RGBA8, row-major, **premultiplied**, `len == width * height * 4`.
     ///
-    /// The premultiplied invariant `r, g, b <= a` is enforced by the
-    /// constructors, so blending can add the source channel directly without
-    /// risking an overflow past 255.
+    /// The constructors normalise this — they check the length and clamp each
+    /// channel to the alpha, so the premultiplied invariant `r, g, b <= a`
+    /// holds. The fields are public, though, so a struct literal can sidestep
+    /// them; [`composite_cursor`] therefore re-checks the length and clamps
+    /// again rather than trusting the invariant it cannot enforce.
     pub data: Vec<u8>,
     /// Top-left corner on the virtual desktop, in physical pixels. Already
     /// hotspot-adjusted.
@@ -159,6 +161,9 @@ impl CursorImage {
     ///
     /// Lives here rather than in the X11 backend so the bit-shuffling is
     /// covered by tests that run on every platform.
+    ///
+    /// A short buffer is an error; a longer one has its tail ignored, since a
+    /// reply carrying padding past `width * height` is still a usable cursor.
     pub fn from_argb_words(
         width: u32,
         height: u32,
@@ -225,14 +230,33 @@ pub fn composite_cursor(frame: &mut RawFrame, cursor: &CursorImage) {
         return;
     }
 
+    // `CursorImage`'s fields are public, so a caller can build one by struct
+    // literal and skip the constructors' validation. Re-check rather than
+    // trusting it: the indexing below would otherwise run off the end of a
+    // short buffer.
+    if cursor.data.len() != (cursor.width as usize) * (cursor.height as usize) * BYTES_PER_PIXEL {
+        log::warn!(
+            "ignoring a {}x{} cursor with {} bytes of pixel data",
+            cursor.width,
+            cursor.height,
+            cursor.data.len()
+        );
+        return;
+    }
+
     // Work out the overlapping rectangle once rather than bounds-checking every
-    // pixel. `as i64` on a float saturates, so an absurd origin cannot wrap.
+    // pixel. The float-to-int casts saturate and the additions are saturating,
+    // so no position — however absurd, including infinities — can wrap.
     let left = (cursor.position.x - frame.origin.x).round() as i64;
     let top = (cursor.position.y - frame.origin.y).round() as i64;
     let x0 = left.max(0);
     let y0 = top.max(0);
-    let x1 = (left + i64::from(cursor.width)).min(i64::from(frame.width));
-    let y1 = (top + i64::from(cursor.height)).min(i64::from(frame.height));
+    let x1 = left
+        .saturating_add(i64::from(cursor.width))
+        .min(i64::from(frame.width));
+    let y1 = top
+        .saturating_add(i64::from(cursor.height))
+        .min(i64::from(frame.height));
     if x1 <= x0 || y1 <= y0 {
         return;
     }
@@ -258,6 +282,8 @@ pub fn composite_cursor(frame: &mut RawFrame, cursor: &CursorImage) {
 }
 
 /// Source-over of a premultiplied `src` onto a straight-alpha `dst`, in place.
+///
+/// `sa` is `src[3]`, already read by the caller.
 fn blend_premultiplied_over(src: &[u8], dst: &mut [u8], sa: u32) {
     let inv = 255 - sa;
     let da = u32::from(dst[3]);
@@ -266,7 +292,12 @@ fn blend_premultiplied_over(src: &[u8], dst: &mut [u8], sa: u32) {
     // so the result stays opaque and no un-premultiplying is needed.
     if da == 255 {
         for c in 0..3 {
-            dst[c] = (u32::from(src[c]) + div255(u32::from(dst[c]) * inv)) as u8;
+            // `min(sa)` upholds the premultiplied invariant for a `CursorImage`
+            // that was built by struct literal rather than by a constructor.
+            // Without it the sum can exceed 255 and wrap: a bright pixel with a
+            // near-zero alpha would come out dark.
+            let s = u32::from(src[c]).min(sa);
+            dst[c] = (s + div255(u32::from(dst[c]) * inv)) as u8;
         }
         return;
     }
@@ -276,11 +307,18 @@ fn blend_premultiplied_over(src: &[u8], dst: &mut [u8], sa: u32) {
         dst.fill(0);
         return;
     }
+    // Premultiply the destination, blend, and convert back to straight in a
+    // single quotient. Two roundings are deliberately avoided here, because the
+    // final division by a small alpha amplifies both: `dst * da / 255` is not
+    // reduced to 8 bits first (that alone costs up to 64 LSB), and the divisor
+    // is the *unrounded* `out_a`, since `out_a` as a byte can be off by half a
+    // unit which at `out_a = 2` is a 25% error. Largest numerator is
+    // 255*255*255 ≈ 16.6M, so u32 has plenty of room.
+    let denominator = sa * 255 + da * inv;
     for c in 0..3 {
-        // Premultiply the destination, blend, then convert back to straight.
-        let dst_pm = div255(u32::from(dst[c]) * da);
-        let out_pm = u32::from(src[c]) + div255(dst_pm * inv);
-        dst[c] = ((out_pm * 255 + out_a / 2) / out_a).min(255) as u8;
+        let s = u32::from(src[c]).min(sa);
+        let numerator = s * 255 * 255 + u32::from(dst[c]) * da * inv;
+        dst[c] = ((numerator + denominator / 2) / denominator).min(255) as u8;
     }
     dst[3] = out_a as u8;
 }
@@ -510,6 +548,114 @@ mod tests {
         assert!(cursor.is_empty());
         composite_cursor(&mut frame, &cursor);
         assert_eq!(frame.data, before);
+    }
+
+    #[test]
+    fn the_blend_matches_a_floating_point_source_over_reference() {
+        // The blend is the whole feature, so check it against the textbook
+        // formula rather than against itself. Sweeps every alpha pair and a
+        // spread of colours, both the opaque fast path and the general one.
+        fn reference(src_c: f64, sa: f64, dst_c: f64, da: f64) -> f64 {
+            let (sa, da) = (sa / 255.0, da / 255.0);
+            let out_a = sa + da * (1.0 - sa);
+            if out_a == 0.0 {
+                return 0.0;
+            }
+            // `src_c` arrives premultiplied; `dst_c` does not.
+            let out_pm = src_c / 255.0 + (dst_c / 255.0) * da * (1.0 - sa);
+            255.0 * out_pm / out_a
+        }
+
+        let mut worst: f64 = 0.0;
+        for sa in 0..=255u32 {
+            for da in (0..=255u32).step_by(3) {
+                for src_c in (0..=sa).step_by((sa as usize / 8).max(1)) {
+                    for dst_c in (0..=255u32).step_by(17) {
+                        let mut dst = [dst_c as u8, 0, 0, da as u8];
+                        let src = [src_c as u8, 0, 0, sa as u8];
+                        if sa == 0 {
+                            continue; // the caller skips these
+                        }
+                        blend_premultiplied_over(&src, &mut dst, sa);
+                        let expected = reference(src_c as f64, sa as f64, dst_c as f64, da as f64);
+                        worst = worst.max((f64::from(dst[0]) - expected).abs());
+
+                        // The composited alpha must match too.
+                        let expected_a = 255.0
+                            * (sa as f64 / 255.0 + (da as f64 / 255.0) * (1.0 - sa as f64 / 255.0));
+                        assert!(
+                            (f64::from(dst[3]) - expected_a).abs() <= 1.0,
+                            "alpha: sa={sa} da={da} got {} want {expected_a:.2}",
+                            dst[3]
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            worst <= 1.0,
+            "blend drifts from the reference by {worst:.3} LSB"
+        );
+    }
+
+    #[test]
+    fn a_low_alpha_destination_does_not_lose_the_colour_underneath() {
+        // Regression: rounding the premultiplied destination to 8 bits before
+        // dividing by a small composited alpha turned this 64 into a 128.
+        let mut dst = [128, 0, 0, 1];
+        blend_premultiplied_over(&[0, 0, 0, 1], &mut dst, 1);
+        assert_eq!(dst[0], 64);
+    }
+
+    #[test]
+    fn a_cursor_built_by_struct_literal_cannot_corrupt_or_panic() {
+        // The fields are public, so the constructors' validation can be
+        // bypassed. Neither a broken premultiplied invariant nor a short buffer
+        // may take the process down or darken the frame.
+        let mut frame = RawFrame::filled(2, 2, [255, 255, 255, 255], Vec2D::ZERO, 1.0).unwrap();
+        composite_cursor(
+            &mut frame,
+            &CursorImage {
+                width: 1,
+                height: 1,
+                data: vec![255, 255, 255, 1], // r,g,b far above alpha
+                position: Vec2D::ZERO,
+            },
+        );
+        assert_eq!(
+            frame.pixel(0, 0),
+            Some([255, 255, 255, 255]),
+            "white over white must stay white, not wrap to dark"
+        );
+
+        // A buffer too short for the stated size is ignored, not indexed.
+        let before = frame.data.clone();
+        composite_cursor(
+            &mut frame,
+            &CursorImage {
+                width: 4,
+                height: 4,
+                data: vec![0; 8],
+                position: Vec2D::ZERO,
+            },
+        );
+        assert_eq!(frame.data, before);
+    }
+
+    #[test]
+    fn an_absurd_cursor_position_cannot_overflow_the_overlap_maths() {
+        let mut frame = RawFrame::filled(4, 4, [0, 0, 0, 255], Vec2D::ZERO, 1.0).unwrap();
+        let before = frame.data.clone();
+        for x in [1e30, -1e30, f32::INFINITY, f32::NEG_INFINITY, f32::NAN] {
+            composite_cursor(
+                &mut frame,
+                &opaque_cursor(2, 2, [255, 0, 0], Vec2D::new(x, x)),
+            );
+        }
+        // NaN casts to 0, so that one legitimately draws at the origin; the
+        // rest are far outside. What matters is that none of them panicked.
+        assert_eq!(frame.pixel(3, 3), Some([0, 0, 0, 255]));
+        let _ = before;
     }
 
     #[test]

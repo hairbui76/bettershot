@@ -270,17 +270,17 @@ impl SettingsWindow {
         // cursor: the Wayland screenshot portal has no cursor control at all,
         // and an X server without XFixes cannot be asked. A checkbox that
         // silently does nothing is worse than one that says why.
-        let cursor_supported = crate::capture::cursor_supported();
-        ui.add_enabled_ui(cursor_supported, |ui| {
-            let label = if cursor_supported {
-                "Include the cursor"
-            } else {
-                "Include the cursor (unavailable on this display server)"
-            };
-            changed |= ui
-                .checkbox(&mut config.capture.include_cursor, label)
-                .changed();
-        });
+        // Left editable even where it does nothing: a config file carried over
+        // from an X11 machine can arrive with this on, and a disabled checkbox
+        // would show it ticked with no way to untick it.
+        let label = if crate::capture::cursor_supported() {
+            "Include the cursor"
+        } else {
+            "Include the cursor (unavailable on this display server)"
+        };
+        changed |= ui
+            .checkbox(&mut config.capture.include_cursor, label)
+            .changed();
         changed |= ui
             .checkbox(
                 &mut config.capture.snap_to_windows,

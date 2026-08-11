@@ -352,9 +352,18 @@ listed here rather than left to be discovered:
   - **macOS** — belongs with Phase 5; `SCStreamConfiguration.showsCursor` does
     it in one line once there is a Mac to verify on.
 
-  Backends report this through `Capabilities::cursor`, the settings checkbox is
-  only enabled where it is true, and the CLI logs a warning rather than
-  silently ignoring the flag.
+  Backends report this through `Capabilities::cursor`, the settings checkbox
+  says when it is unavailable, and the CLI logs a warning rather than silently
+  ignoring the flag.
+
+- **macOS frames are premultiplied where the rest of the pipeline is not** —
+  `RawFrame` and the render canvas are straight-alpha (PNG round-trips have to
+  stay bit-exact), but the ScreenCaptureKit backend passes premultiplied BGRA
+  through unchanged, so a translucent pixel would have its alpha applied twice.
+  Invisible on a normal opaque screenshot, where the two are the same bytes;
+  visible on window captures with translucent edges. The fix is an
+  un-premultiply pass in `bgra_rows_to_rgba`, held for Phase 5 because it needs
+  a Mac to verify rather than a guess.
 That is the whole list. `--output-filename -` used to be here too; it now
 writes the encoded image to stdout, with a regression test that asserts no file
 named `-` is created.

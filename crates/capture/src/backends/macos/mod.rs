@@ -445,10 +445,17 @@ pub(crate) fn force_opaque_for(alpha_info: u32) -> bool {
 /// the caller runs against `CGImageGetBitsPerPixel` and
 /// `CGImageGetByteOrderInfo` before any of these bytes are touched.
 ///
-/// ScreenCaptureKit's SDR output is BGRA with *premultiplied* alpha. That is
-/// left as-is: `RawFrame` is documented as RGBA8 and every consumer in
-/// bettershot composites premultiplied, so un-premultiplying here would only
-/// lose precision on translucent window edges.
+/// ScreenCaptureKit's SDR output is BGRA with *premultiplied* alpha, and this
+/// function currently passes that through unchanged.
+///
+/// **That is a known deviation, not a decision.** [`crate::RawFrame`] is
+/// straight-alpha, as is `bettershot_render`'s canvas, so a translucent pixel
+/// from here has its alpha applied twice downstream. It survives only because
+/// a full-screen capture is opaque, where straight and premultiplied are the
+/// same bytes; window captures with translucent edges are the case that would
+/// show it. The fix is an un-premultiply pass, which belongs with the rest of
+/// the Phase 5 macOS work — it needs a Mac to verify against, and a wrong
+/// conversion is worse than the current honest note. See ROADMAP.md.
 pub(crate) fn bgra_rows_to_rgba(
     data: &[u8],
     width: u32,

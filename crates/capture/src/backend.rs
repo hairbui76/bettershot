@@ -104,24 +104,11 @@ pub fn capture_after(
     backend.capture(target)
 }
 
-/// [`capture_after`], then blend the pointer in when `include_cursor` is set.
-///
-/// The cursor is sampled *after* the delay and the grab, which is as close to
-/// the captured instant as a two-call platform API allows.
-pub fn capture_after_including_cursor(
-    backend: &dyn CaptureBackend,
-    target: CaptureTarget,
-    delay: Duration,
-    include_cursor: bool,
-) -> Result<RawFrame, CaptureError> {
-    let mut frame = capture_after(backend, target, delay)?;
-    if include_cursor {
-        draw_cursor_into(backend, &mut frame);
-    }
-    Ok(frame)
-}
-
 /// Blend the backend's current cursor into `frame`.
+///
+/// Call this straight after [`capture_after`], which is as close to the
+/// captured instant as a two-call platform API allows — the cursor is never in
+/// the grabbed pixels, so it always takes a second query.
 ///
 /// Deliberately infallible: the user already has their screenshot by this
 /// point, and a cursor that could not be read is a cosmetic loss, not a reason
@@ -268,22 +255,11 @@ mod tests {
     fn the_cursor_is_only_drawn_when_it_is_asked_for() {
         let backend = FakeBackend::with_cursor(Cursor::Red);
 
-        let without = capture_after_including_cursor(
-            &backend,
-            CaptureTarget::FullDesktop,
-            Duration::ZERO,
-            false,
-        )
-        .unwrap();
+        let without = capture_after(&backend, CaptureTarget::FullDesktop, Duration::ZERO).unwrap();
         assert_eq!(without.pixel(0, 0), Some([0, 0, 0, 255]));
 
-        let with = capture_after_including_cursor(
-            &backend,
-            CaptureTarget::FullDesktop,
-            Duration::ZERO,
-            true,
-        )
-        .unwrap();
+        let mut with = capture_after(&backend, CaptureTarget::FullDesktop, Duration::ZERO).unwrap();
+        draw_cursor_into(&backend, &mut with);
         assert_eq!(with.pixel(0, 0), Some([255, 0, 0, 255]));
         // Only the pixel under the cursor changes.
         assert_eq!(with.pixel(1, 1), Some([0, 0, 0, 255]));
@@ -291,26 +267,20 @@ mod tests {
 
     #[test]
     fn a_hidden_cursor_leaves_the_frame_alone() {
-        let frame = capture_after_including_cursor(
-            &FakeBackend::with_cursor(Cursor::Hidden),
-            CaptureTarget::FullDesktop,
-            Duration::ZERO,
-            true,
-        )
-        .unwrap();
+        let backend = FakeBackend::with_cursor(Cursor::Hidden);
+        let mut frame =
+            capture_after(&backend, CaptureTarget::FullDesktop, Duration::ZERO).unwrap();
+        draw_cursor_into(&backend, &mut frame);
         assert_eq!(frame.pixel(0, 0), Some([0, 0, 0, 255]));
     }
 
     #[test]
     fn a_cursor_query_that_fails_still_yields_the_screenshot() {
         // Losing the pointer is cosmetic; losing the capture is not.
-        let frame = capture_after_including_cursor(
-            &FakeBackend::with_cursor(Cursor::Fails),
-            CaptureTarget::FullDesktop,
-            Duration::ZERO,
-            true,
-        )
-        .unwrap();
+        let backend = FakeBackend::with_cursor(Cursor::Fails);
+        let mut frame =
+            capture_after(&backend, CaptureTarget::FullDesktop, Duration::ZERO).unwrap();
+        draw_cursor_into(&backend, &mut frame);
         assert_eq!(frame.width, 2);
         assert_eq!(frame.pixel(0, 0), Some([0, 0, 0, 255]));
     }
