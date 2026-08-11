@@ -1,13 +1,19 @@
 # Flatpak manifest for bettershot.
 #
-# NOT YET BUILT — see ../README.md.
+# Built on every change by .github/workflows/flatpak.yml, which is the
+# authoritative recipe — it installs the runtime, vendors the crates and runs
+# the build. Locally:
 #
-# Build:
 #   python3 flatpak-cargo-generator.py ../../Cargo.lock -o cargo-sources.json
 #   flatpak-builder --user --install --force-clean build org.bettershot.Bettershot.yml
 #
 # Flathub builds are offline, so every crate must be vendored into
 # cargo-sources.json first; that file is generated, not committed by hand.
+#
+# `runtime-version` is a real constraint, not a formality: the Rust in the SDK
+# extension has to satisfy the dependency tree's minimum. 24.08 ships rustc
+# 1.89 and egui needs 1.92, so this targets 25.08 (rustc 1.97). The workflow
+# prints the available branches and the SDK's rustc on every run.
 app-id: org.bettershot.Bettershot
 runtime: org.freedesktop.Platform
 runtime-version: '25.08'
@@ -64,6 +70,12 @@ modules:
     build-options:
       env:
         CARGO_NET_OFFLINE: 'true'
+        # The xdotool module above installs libxdo into /app/lib, and every C
+        # module here picks that up from the LDFLAGS flatpak-builder exports.
+        # Rust does not read LDFLAGS, and the tray's libxdo binding emits a
+        # bare `-lxdo` without a search path, so without this the link fails
+        # with "unable to find library -lxdo" after compiling the whole tree.
+        RUSTFLAGS: '-L native=/app/lib'
     build-commands:
       - cargo --offline fetch --manifest-path Cargo.toml
       - cargo --offline build --release -p bettershot --features tray
