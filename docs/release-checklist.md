@@ -26,6 +26,7 @@ below.
 - [ ] `cargo check --target aarch64-apple-darwin` for the libraries **and** the
       binary (`-p bettershot --no-default-features --features tray`)
 - [ ] Tests pass on `ubuntu-latest`, `windows-latest` and `macos-latest`
+- [ ] Release builds succeed on all three, with `--features tray`
 - [ ] `Satty/` is still untracked
 
 ## Per-environment manual verification

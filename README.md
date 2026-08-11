@@ -11,7 +11,9 @@ ScreenCaptureKit capture backend and its permission flow — compiles and passes
 clippy for `aarch64-apple-darwin`, but nothing has ever been run on a Mac. See
 [ROADMAP.md](ROADMAP.md) before relying on it.
 
-> Status: in development. See [ROADMAP.md](ROADMAP.md) for what works today.
+> Status: in development, but building and testing green on real Linux, Windows
+> and macOS runners. See [ROADMAP.md](ROADMAP.md) for what works today and what
+> is written but still unproven.
 
 ## Why another one
 
