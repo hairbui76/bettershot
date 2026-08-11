@@ -9,6 +9,10 @@
   instructions rotted the first time. CI builds this on every push, so the
   definition is verified rather than assumed.
 
+  Every source path below is relative to the REPOSITORY ROOT, not to this
+  file: WiX resolves them against the working directory, and the job builds
+  from the root (which is also why BinDir is passed as target\release).
+
   Two things that job encodes and that are easy to get wrong:
 
     * `ui:WixUI` below is an extension element. Without the WiX UI extension
@@ -60,7 +64,7 @@
       </Component>
 
       <Component Id="Licence" Guid="*">
-        <File Id="LICENSE" Source="..\..\LICENSE" KeyPath="yes" />
+        <File Id="LICENSE" Source="LICENSE" KeyPath="yes" />
       </Component>
     </ComponentGroup>
 
@@ -96,6 +100,6 @@
     </Feature>
 
     <ui:WixUI Id="WixUI_Minimal" />
-    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+    <WixVariable Id="WixUILicenseRtf" Value="packaging\windows\license.rtf" />
   </Package>
 </Wix>
