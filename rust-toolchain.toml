@@ -1,0 +1,14 @@
+# Build with the same toolchain CI does.
+#
+# Without this, a contributor on an older toolchain sees a clean `cargo clippy`
+# and CI still fails: lints are added to clippy over time, so an older compiler
+# simply cannot see them. That happened on this project's first CI run — three
+# lints, one of them a real redundancy introduced by a recent change, all
+# invisible locally on 1.94 while CI ran 1.97.
+#
+# `rust-version` in Cargo.toml records the minimum supported version (1.85) and
+# is a separate promise; this file is about matching CI.
+[toolchain]
+channel = "stable"
+components = ["clippy", "rustfmt"]
+targets = ["x86_64-unknown-linux-gnu"]

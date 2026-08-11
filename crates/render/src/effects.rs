@@ -369,10 +369,14 @@ fn pixelate(canvas: &mut Canvas, base: &Canvas, area: PixelBox, block_size: f32)
                     count += 1;
                 }
             }
-            if count > 0 {
+            // `NonZero` rather than a `count > 0` guard, so the divisor carries
+            // its own proof and the division cannot be a division by zero.
+            if let Some(count) = std::num::NonZeroU64::new(count) {
+                let n = count.get();
                 let mut rgba = [0u8; BYTES_PER_PIXEL];
                 for (out, sum) in rgba.iter_mut().zip(sums) {
-                    *out = ((sum + count / 2) / count) as u8;
+                    // + n/2 rounds to nearest rather than truncating.
+                    *out = ((sum + n / 2) / n) as u8;
                 }
                 // Only the part of the cell the rect actually covers is written.
                 for by in y.max(area.y0)..y_end.min(area.y1) {

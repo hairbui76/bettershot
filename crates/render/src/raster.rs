@@ -164,7 +164,6 @@ impl Mask {
         for py in y0..y1 {
             let cy = py as f32 + 0.5;
             let row = (py - self.bounds.y0) as usize * self.stride;
-            let mut idx = row + (x0 - self.bounds.x0) as usize;
 
             for px in x0..x1 {
                 // Evaluated directly rather than stepped along the row. Each
@@ -179,10 +178,10 @@ impl Mask {
                 let (v0, v1, v2) = (e0.eval(cx, cy), e1.eval(cx, cy), e2.eval(cx, cy));
                 let cov = coverage(&e0, &e1, &e2, v0, v1, v2);
                 if cov > 0.0 {
+                    let idx = row + (px - self.bounds.x0) as usize;
                     let slot = &mut self.data[idx];
                     *slot = (*slot + cov).min(1.0);
                 }
-                idx += 1;
             }
         }
     }

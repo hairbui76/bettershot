@@ -363,10 +363,10 @@ impl Editor {
                         self.send(InputEvent::Key(KeyEvent::new(k, mods)));
                     }
                 }
-                egui::Event::Text(text) => {
-                    if self.tool.wants_text_input() {
-                        self.send(InputEvent::Text(TextEvent::Commit(text)));
-                    }
+                // Only the text tool consumes typed characters; for every
+                // other tool they fall through so digits can pick colours.
+                egui::Event::Text(text) if self.tool.wants_text_input() => {
+                    self.send(InputEvent::Text(TextEvent::Commit(text)));
                 }
                 _ => {}
             }
