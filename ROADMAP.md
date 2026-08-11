@@ -6,12 +6,12 @@
 
 ## Status
 
-**59 of 65 roadmap items are done**, and the project now builds and tests
+**60 of 66 roadmap items are done**, and the project now builds and tests
 **green on real Linux, Windows and macOS runners**:
 
 | Job | Result |
 | --- | --- |
-| Test (ubuntu-latest) | 741 tests |
+| Test (ubuntu-latest) | 744 tests |
 | Test (windows-latest) | 716 tests |
 | Test (macos-latest) | 717 tests |
 | Cross-compile check | clippy clean for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
@@ -147,7 +147,8 @@ Deliverable: bettershot as an always-available tool, not just a one-shot CLI.
 - [x] Texture/memory audit for 4K and dual-4K, with measurements and the two decisions that bound memory: [docs/performance.md](docs/performance.md)
 - [x] Startup cost measured for everything bettershot controls: **3.2 ms** to parse arguments, load config and select a backend — ~1.4 ms above the cost of starting any process ([docs/performance.md](docs/performance.md))
 - [x] Startup instrumentation: `-v` now logs "first frame after Nms", so the end-to-end figure can be measured by anyone on real hardware
-- [ ] Confirm end-to-end < 150 ms on mid-range hardware — a headless software-rendered session cannot produce a number that means anything for this target
+- [x] The algorithmic properties that target rests on are **guarded against regression** in CI: blur cost independent of radius, pixelate cost independent of block size, and export no worse than linear in pixel count. Asserted as ratios between measurements taken in the same run, so they mean the same thing on a noisy shared runner. The figures in [docs/performance.md](docs/performance.md) had been measured once by hand and could otherwise regress by an order of magnitude unnoticed.
+- [ ] Confirm the end-to-end < 150 ms figure on mid-range hardware — a headless software-rendered session cannot produce a number that means anything for this target, because most of it is compositor round-trip and window creation
 
 ## Phase 4 — Packaging & 1.0
 

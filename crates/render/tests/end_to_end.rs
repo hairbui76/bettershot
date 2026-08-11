@@ -773,3 +773,109 @@ fn an_image_effect_on_an_annotated_canvas_replaces_rather_than_blends() {
         "untouched by the effect"
     );
 }
+
+// --- Performance regression guards -----------------------------------------
+//
+// docs/performance.md records numbers that were measured once, by hand, on one
+// machine. That is enough to characterise the program and useless as a guard:
+// nothing notices when a change makes an operation ten times more expensive.
+//
+// These assert *ratios* between two measurements taken on the same machine in
+// the same run, not wall-clock budgets. A ratio means the same thing on a fast
+// laptop and a noisy shared CI runner, where an absolute threshold either
+// flakes or is set so loose it catches nothing. Each takes the minimum of
+// several runs, because noise can only ever add time.
+
+/// Repeat `f` and return the fastest run.
+fn fastest<T>(runs: usize, mut f: impl FnMut() -> T) -> std::time::Duration {
+    let mut best = std::time::Duration::MAX;
+    for _ in 0..runs {
+        let start = std::time::Instant::now();
+        std::hint::black_box(f());
+        best = best.min(start.elapsed());
+    }
+    best
+}
+
+/// The blur is a three-pass sliding-window box filter, so it is O(1) per pixel
+/// per pass *regardless of radius* — see docs/performance.md. A naive kernel
+/// would be O(r²) instead, and nothing else in the suite would notice: the
+/// output is still a blur, just one that freezes the editor on a large
+/// redaction.
+#[test]
+fn blur_cost_does_not_grow_with_the_radius() {
+    let base = Canvas::filled(640, 360, Color::rgb(90, 110, 130));
+
+    let small = fastest(3, || {
+        bettershot_render::apply_effect(&base, ImageEffect::Blur { radius: 4.0 })
+    });
+    let large = fastest(3, || {
+        bettershot_render::apply_effect(&base, ImageEffect::Blur { radius: 64.0 })
+    });
+
+    // A 16x radius increase would be a 256x cost increase if it were O(r²).
+    // Allowing 4x leaves plenty of room for cache effects and scheduling noise
+    // while still catching that by two orders of magnitude.
+    let ratio = large.as_secs_f64() / small.as_secs_f64().max(1e-9);
+    assert!(
+        ratio < 4.0,
+        "blur at radius 64 took {ratio:.1}x the time of radius 4 \
+         ({large:?} vs {small:?}); the sliding-window filter should make radius \
+         almost free, so this suggests it became kernel-sized"
+    );
+}
+
+/// Pixelation is a block average, so it too should not care how big the blocks
+/// are.
+#[test]
+fn pixelate_cost_does_not_grow_with_the_block_size() {
+    let base = Canvas::filled(640, 360, Color::rgb(20, 160, 90));
+
+    let small = fastest(3, || {
+        bettershot_render::apply_effect(&base, ImageEffect::Pixelate { block_size: 4.0 })
+    });
+    let large = fastest(3, || {
+        bettershot_render::apply_effect(&base, ImageEffect::Pixelate { block_size: 64.0 })
+    });
+
+    let ratio = large.as_secs_f64() / small.as_secs_f64().max(1e-9);
+    assert!(
+        ratio < 4.0,
+        "pixelate with 64px blocks took {ratio:.1}x the time of 4px blocks \
+         ({large:?} vs {small:?})"
+    );
+}
+
+/// Export cost should track the pixel count. 4K holds four times as many
+/// pixels as 1080p, so anything much beyond that ratio means an operation has
+/// gone superlinear in the image size — which is exactly the shape of bug that
+/// only shows up on the largest monitor someone owns.
+#[test]
+fn export_cost_scales_with_the_pixel_count_and_no_worse() {
+    fn export(width: u32, height: u32) -> std::time::Duration {
+        let base = Canvas::filled(width, height, Color::rgb(40, 44, 52));
+        let mut scene = Scene::new(base.size());
+        scene.add(Box::new(Rectangle {
+            rect: Rect::from_xywh(20.0, 20.0, width as f32 / 2.0, height as f32 / 2.0),
+            style: style(),
+        }));
+        fastest(2, || {
+            render_scene(&base, &scene)
+                .encode_png()
+                .expect("a rendered canvas should encode")
+        })
+    }
+
+    let hd = export(1920, 1080);
+    let uhd = export(3840, 2160);
+
+    // Exactly 4x the pixels. 8x allows for per-pixel work that is not perfectly
+    // linear (compression ratios, cache behaviour) without admitting a
+    // quadratic.
+    let ratio = uhd.as_secs_f64() / hd.as_secs_f64().max(1e-9);
+    assert!(
+        ratio < 8.0,
+        "4K export took {ratio:.1}x the time of 1080p ({uhd:?} vs {hd:?}) for \
+         4x the pixels; something is superlinear in the image size"
+    );
+}

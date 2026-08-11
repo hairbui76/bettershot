@@ -44,6 +44,27 @@ be 166 MB. As PNG they are a few megabytes, and they are only decoded at the
 moment one is copied. History is also memory-only and never written to disk —
 see `crates/app/src/history.rs` for why.
 
+## What is guarded, and what is not
+
+Every number on this page was measured once, by hand, on one machine. That
+characterises the program; it does not protect it. The properties the numbers
+*depend on* are asserted in `crates/render/tests/end_to_end.rs`, as ratios
+between two measurements taken in the same run rather than wall-clock budgets —
+a ratio means the same thing on a fast laptop and a noisy CI runner, where an
+absolute threshold either flakes or is set so loose it catches nothing:
+
+| Guarded | How |
+| --- | --- |
+| Blur cost does not grow with radius | radius 64 vs radius 4, must stay under 4x (a kernel-sized implementation would be ~256x) |
+| Pixelate cost does not grow with block size | 64px vs 4px blocks, same bound |
+| Export does not go superlinear in image size | 4K vs 1080p, must stay under 8x for 4x the pixels |
+
+The measured values are 1.0x, 0.9x and 3.6x, so there is real headroom in each.
+
+What is **not** guarded is the end-to-end figure below: the compositor
+round-trip and window creation need a real desktop session, and no headless
+container can produce a number that means anything for that target.
+
 ## Blur cost is independent of radius
 
 The blur is a three-pass sliding-window box filter, so it is O(1) per pixel per
