@@ -6,17 +6,18 @@
 
 ## Status
 
-**55 of 61 roadmap items are done**, and the project now builds and tests
+**56 of 62 roadmap items are done**, and the project now builds and tests
 **green on real Linux, Windows and macOS runners**:
 
 | Job | Result |
 | --- | --- |
-| Test (ubuntu-latest) | 740 tests |
+| Test (ubuntu-latest) | 741 tests |
 | Test (windows-latest) | 716 tests |
 | Test (macos-latest) | 717 tests |
 | Cross-compile check | clippy clean for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
 | Release build | Linux, Windows and macOS, all with `--features tray` |
 | MSI builds (unsigned) | a 4.4 MB installer, built from the WiX definition on every push |
+| Flatpak | builds against the 25.08 runtime, when the manifest or lockfile changes |
 | Satty reference untouched | the upstream checkout is still out of version control |
 
 The Windows and macOS counts are lower because some tests are Linux-specific
@@ -155,7 +156,8 @@ Deliverable: bettershot as an always-available tool, not just a one-shot CLI.
 - [ ] **Sign** the MSI and submit to winget-pkgs — needs an Authenticode certificate and a winget-pkgs account. This is now the *only* thing standing between the repository and a publishable installer.
 - [x] Flatpak manifest and AUR `PKGBUILD` authored ([`packaging/`](packaging/)); deb/rpm and portable archives come from `cargo dist`; `.desktop` file and AppStream metainfo in `assets/`
 - [x] `.deb` and `.rpm` **built and verified**: `packaging/build-deb.sh` and `build-rpm.sh` produce them, both extract, the binary runs from each package tree, deb dependencies are resolved from the real link set, and the desktop entry and AppStream metainfo pass `desktop-file-validate` and `appstreamcli validate` cleanly
-- [ ] Build the Flatpak and AUR packages and publish everything — `flatpak-builder` and `makepkg` are not available here, and each channel needs an account
+- [x] The Flatpak **actually builds**, in [`.github/workflows/flatpak.yml`](.github/workflows/flatpak.yml), whenever the manifest, assets or lockfile change. It found four faults in a manifest that had never been run: the source would have copied a 21 GB `target/` and followed the `Satty` symlink out of the repository; the 24.08 runtime's rustc 1.89 is too old for egui's 1.92; Rust never saw the `-L/app/lib` that flatpak-builder passes to C modules, so linking libxdo failed; and the icon was not loadable as an image at all (see below).
+- [ ] Build the AUR package, and publish to Flathub and the AUR — `makepkg` is not available here, and each channel needs an account. Flathub submission is a pull request against `flathub/flathub`.
 - [x] Shell completions + manpage from `crates/cli` in `build.rs` (Satty's `build.rs` is the template)
 - [x] Docs site or wiki: per-compositor/per-OS setup guides, Satty migration guide (config mapping table)
 - [x] Crash reporting (opt-in, local-only, contains no image data) and versioned config migration with a refuse-the-future guard
@@ -384,7 +386,7 @@ rather than marked done.
 | --- | --- |
 | Runtime verification of the tray and hotkeys | Both are now **implemented** and compile for Linux and Windows, and the hotkey path is unit-tested including its failure modes. What is missing is a real desktop session: nobody has seen the tray icon appear or a hotkey fire. Treat daemon mode as untested-in-anger. |
 | Signed Windows MSI / winget | An Authenticode certificate and a winget-pkgs submission. An unsigned MSI is worse than none, so nothing here publishes one. The definition itself is no longer a guess: CI builds a 4.4 MB MSI from it on every push and keeps it as an artefact. |
-| Flatpak / AUR / deb | A build host to actually produce and install the artefacts. A Flatpak manifest that has never been built is a guess, not a deliverable. The `.desktop` file and AppStream metainfo they consume **are** done, in `assets/`. |
+| Flatpak / AUR / deb | **Flatpak now builds in CI** and is no longer a guess; what is left is a Flathub account and the submission PR. The `.deb` and `.rpm` have been built and validated here. The AUR `PKGBUILD` is still unbuilt: `makepkg` is Arch-only and is not available on this machine or on a GitHub runner without a container. |
 | v1.0 tag | The acceptance criteria say "holds on Windows + four Linux environments". None can be exercised here. |
 | End-to-end startup latency | The ~147 ms that is compositor round-trip and window creation needs a real session. bettershot's own share **is** measured at 3.2 ms. Everything else about performance is measured too — see [docs/performance.md](docs/performance.md). |
 | Phase 5 macOS capture | A Mac. ScreenCaptureKit and the TCC permission flow cannot be written blind and left untested. The capture crate ships a macOS stub that returns a clear `Unsupported` error naming this phase, and that stub is verified to compile for `aarch64-apple-darwin`. |
