@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.bettershot.Bettershot</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MPL-2.0</project_license>
+
+  <developer id="org.bettershot">
+    <name>bettershot contributors</name>
+  </developer>
+
+  <name>bettershot</name>
+  <summary>Capture a screenshot and annotate it</summary>
+
+  <description>
+    <p>
+      bettershot captures a region, a window or a whole monitor and lets you
+      mark it up straight away, then copy the result to the clipboard or save
+      it to a file.
+    </p>
+    <p>Tools:</p>
+    <ul>
+      <li>Arrows, lines, rectangles and ellipses</li>
+      <li>Freehand brush and text</li>
+      <li>Numbered markers for step-by-step walkthroughs</li>
+      <li>Highlighting, and blur or pixelation for hiding sensitive details</li>
+      <li>Cropping, with full undo and redo</li>
+    </ul>
+    <p>
+      It runs on Linux and Windows. Its annotation model is adapted from Satty,
+      whose small and obvious toolset it deliberately follows.
+    </p>
+  </description>
+
+  <launchable type="desktop-id">org.bettershot.Bettershot.desktop</launchable>
+
+  <url type="homepage">https://github.com/bettershot/bettershot</url>
+  <url type="bugtracker">https://github.com/bettershot/bettershot/issues</url>
+
+  <provides>
+    <binary>bettershot</binary>
+  </provides>
+
+  <categories>
+    <category>Graphics</category>
+    <category>2DGraphics</category>
+    <category>RasterGraphics</category>
+  </categories>
+
+  <content_rating type="oars-1.1" />
+
+  <releases>
+    <release version="0.1.0" date="2026-08-11">
+      <description>
+        <p>First development release.</p>
+      </description>
+    </release>
+  </releases>
+</component>

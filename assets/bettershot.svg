@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  bettershot application icon.
+
+  A camera shutter with a selection corner bracket over it: the two things the
+  program does, capture and choose a region. Drawn as flat shapes with no
+  gradients or filters so it stays legible at 16px in a system tray, which is
+  where most icons of this kind fall apart.
+
+  The palette matches the default annotation colours in
+  crates/core/src/style.rs, so the icon and the tool agree with each other.
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" width="128" height="128">
+  <title>bettershot</title>
+
+  <!-- Body -->
+  <rect x="8" y="26" width="112" height="82" rx="14" fill="#2f3542"/>
+  <!-- Viewfinder hump -->
+  <path d="M44 26 L54 12 h20 l10 14 z" fill="#2f3542"/>
+
+  <!-- Lens -->
+  <circle cx="64" cy="68" r="30" fill="#3d4454"/>
+  <circle cx="64" cy="68" r="22" fill="#22a6b3"/>
+  <circle cx="64" cy="68" r="11" fill="#1b2430"/>
+  <!-- Catchlight, so the lens reads as glass rather than a flat hole -->
+  <circle cx="55" cy="59" r="5" fill="#ffffff" opacity="0.5"/>
+
+  <!-- Shutter indicator -->
+  <circle cx="103" cy="41" r="5" fill="#eb4d4b"/>
+
+  <!-- Selection bracket, the "choose a region" half of the idea. Offset to the
+       top-left so it reads as a marquee being dragged across the camera. -->
+  <g fill="none" stroke="#f0932b" stroke-width="7" stroke-linecap="square">
+    <path d="M6 44 V18 H32"/>
+  </g>
+</svg>

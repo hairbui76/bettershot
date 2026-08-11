@@ -1,0 +1,66 @@
+[package]
+name = "bettershot"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+default-run = "bettershot"
+
+[features]
+default = ["notifications"]
+
+# Desktop notifications on save and copy. Optional because on macOS
+# `notify-rust` pulls `mac-notification-sys`, whose build script needs the
+# Apple SDK — so a cross-compile check of everything else has to be able to
+# leave it out. Also useful for minimal builds.
+notifications = ["dep:notify-rust"]
+
+# The system tray. `tray-icon` needs GTK 3 and libayatana-appindicator
+# development packages on Linux, which nothing else in bettershot links, so
+# requiring them for every build would be a poor trade. Enable explicitly:
+#
+#     cargo build --features tray
+#
+# It costs nothing beyond the crate on Windows and macOS; distribution builds
+# for those platforms should turn it on.
+tray = ["dep:tray-icon"]
+
+[dependencies]
+bettershot-core.workspace = true
+bettershot-cli.workspace = true
+bettershot-capture.workspace = true
+bettershot-render.workspace = true
+
+eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
+egui = "0.35"
+
+image.workspace = true
+anyhow.workspace = true
+thiserror.workspace = true
+log.workspace = true
+env_logger.workspace = true
+chrono.workspace = true
+clap.workspace = true
+
+# Clipboard and native file dialogs.
+arboard = "3.6"
+rfd = "0.17"
+
+# Staying resident: global hotkeys everywhere, tray behind a feature.
+global-hotkey = "0.8"
+tray-icon = { version = "0.24", optional = true }
+
+[target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
+notify-rust = { version = "4.18", optional = true }
+
+[build-dependencies]
+bettershot-cli.workspace = true
+clap_complete = "4.5"
+clap_mangen = "0.3"
+
+[dev-dependencies]
+tempfile = "3"
