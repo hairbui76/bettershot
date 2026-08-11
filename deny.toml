@@ -1,0 +1,42 @@
+# cargo-deny configuration.
+#
+# bettershot is MPL-2.0 (chosen to match Satty so that adapting its annotation
+# code is licence-clean). Dependencies must be under permissive licences that
+# are compatible with redistributing a binary.
+
+[graph]
+targets = [
+    "x86_64-unknown-linux-gnu",
+    "x86_64-pc-windows-msvc",
+    "aarch64-apple-darwin",
+]
+
+[licenses]
+allow = [
+    "MPL-2.0",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "MIT",
+    "MIT-0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+    "BSL-1.0",
+    "OFL-1.1",
+    "Ubuntu-font-1.0",
+]
+confidence-threshold = 0.9
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+
+[advisories]
+yanked = "deny"
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"

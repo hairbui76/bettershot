@@ -1,0 +1,25 @@
+/target
+**/*.rs.bk
+*.pdb
+
+# Satty is a read-only upstream reference checkout with its own .git directory.
+# It must never be vendored into this repository's history. No trailing slash:
+# it is a symlink here, and `Satty/` would only match a real directory.
+/Satty
+
+# Local editor / OS noise
+.DS_Store
+.idea/
+*.swp
+
+# Local scratch output
+/out/
+*.png.tmp
+
+# Machine-local linker workaround; see .cargo/config.toml
+/.cargo/
+
+# Personal Claude Code settings: model choice, effort, permission mode and
+# machine-specific hooks. Not project configuration, and committing a
+# `bypassPermissions` default would apply it to everyone who clones this.
+/.claude/
