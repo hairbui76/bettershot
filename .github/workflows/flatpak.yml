@@ -105,10 +105,10 @@ jobs:
           sudo apt-get install -y appstream
           cd packaging/flatpak
           echo "--- what is in the build result ---"
-          find build/files/share -maxdepth 4 \( -name '*.svg' -o -name '*.xml' \
-            -o -name '*.desktop' \) -printf '%s\t%p\n' || true
-          echo "--- compose ---"
-          appstreamcli compose --verbose --no-net \
+          find build/files/share \( -name '*.svg' -o -name '*.xml' \
+            -o -name '*.desktop' -o -name '*.png' \) -printf '%s\t%p\n' || true
+          echo "--- compose, with the full issue report ---"
+          appstreamcli compose --no-net --print-report=full \
             --prefix=/ --origin=bettershot \
             --result-root=/tmp/as --data-dir=/tmp/as/data --icons-dir=/tmp/as/icons \
             build/files 2>&1 | tail -40 || true
