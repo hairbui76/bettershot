@@ -29,6 +29,12 @@ on:
       - '.github/workflows/flatpak.yml'
   workflow_dispatch:
 
+# The runtime the manifest targets. Keep this in step with `runtime-version`
+# in packaging/flatpak/org.bettershot.Bettershot.yml — the manifest is what
+# Flathub reads, this is only what CI installs.
+env:
+  RUNTIME_VERSION: '25.08'
+
 jobs:
   build:
     name: Build the Flatpak
@@ -44,14 +50,34 @@ jobs:
           sudo apt-get install -y flatpak flatpak-builder python3-aiohttp python3-tomlkit
 
       # --user throughout: no root, and the runtime cache is a plain directory.
-      - name: Add flathub and install the runtime
+      - name: Add flathub
         run: |
           flatpak remote-add --user --if-not-exists flathub \
             https://dl.flathub.org/repo/flathub.flatpakrepo
+
+      # Which runtime to target is a real decision, not a formality: the Rust
+      # in the SDK extension has to be new enough for the dependency tree, and
+      # 24.08 ships 1.89 while egui needs 1.92. Printed on every run so the
+      # next person choosing a branch can see the options.
+      - name: Available runtime branches
+        run: |
+          echo "--- org.freedesktop.Sdk.Extension.rust-stable ---"
+          flatpak remote-ls --user flathub --all --columns=ref \
+            | grep 'rust-stable' || true
+          echo "--- org.freedesktop.Platform ---"
+          flatpak remote-ls --user flathub --all --columns=ref \
+            | grep '^runtime/org.freedesktop.Platform/x86_64' || true
+
+      - name: Install the runtime
+        run: |
           flatpak install --user -y --noninteractive flathub \
-            org.freedesktop.Platform//24.08 \
-            org.freedesktop.Sdk//24.08 \
-            org.freedesktop.Sdk.Extension.rust-stable//24.08
+            org.freedesktop.Platform//${{ env.RUNTIME_VERSION }} \
+            org.freedesktop.Sdk//${{ env.RUNTIME_VERSION }} \
+            org.freedesktop.Sdk.Extension.rust-stable//${{ env.RUNTIME_VERSION }}
+          echo "--- rustc in the SDK extension ---"
+          flatpak run --user --command=sh \
+            --devel org.freedesktop.Sdk//${{ env.RUNTIME_VERSION }} \
+            -c '/usr/lib/sdk/rust-stable/bin/rustc --version' || true
 
       # Flathub builds are offline, so every crate has to be vendored into
       # cargo-sources.json first. The generator is maintained alongside

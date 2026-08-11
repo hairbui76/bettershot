@@ -10,7 +10,7 @@
 # cargo-sources.json first; that file is generated, not committed by hand.
 app-id: org.bettershot.Bettershot
 runtime: org.freedesktop.Platform
-runtime-version: '24.08'
+runtime-version: '25.08'
 sdk: org.freedesktop.Sdk
 sdk-extensions:
   - org.freedesktop.Sdk.Extension.rust-stable
