@@ -1,0 +1,85 @@
+[package]
+name = "bettershot-capture"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "Screen capture backends for bettershot: monitor/window enumeration and pixel grabbing."
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bettershot-core.workspace = true
+thiserror.workspace = true
+log.workspace = true
+
+# Linux. `xcap` is deliberately NOT used here: on Linux it unconditionally pulls
+# `libwayshot-xcap` -> `wayland-client`/`gbm`/`drm`, which need Wayland and DRM
+# *development* system libraries at build time even for an X11-only build. That
+# breaks headless and X11-only build machines, so Linux uses `x11rb` (pure Rust,
+# no system libraries) for X11 and `ashpd` (pure D-Bus) for the Wayland portal.
+[target.'cfg(target_os = "linux")'.dependencies]
+ashpd = { version = "0.13", default-features = false, features = ["tokio", "screenshot"] }
+tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
+x11rb = { version = "0.13", default-features = false, features = ["randr"] }
+image.workspace = true
+
+# Windows. `xcap` wraps Windows Graphics Capture / DXGI + the Win32 window APIs
+# and cross-compiles cleanly for x86_64-pc-windows-msvc (pure Rust `windows`
+# bindings, no vendored C).
+[target.'cfg(target_os = "windows")'.dependencies]
+xcap = "0.9"
+
+# macOS. The `objc2-*` framework bindings are pure Rust (no vendored C, no Apple
+# SDK needed to *check* them), so `cargo check --target aarch64-apple-darwin`
+# type-checks this backend against the real ScreenCaptureKit API surface from a
+# Linux build machine. Linking of course still needs a Mac.
+#
+# Feature sets are trimmed to what `backends/macos/sck.rs` actually calls:
+# ScreenCaptureKit for enumeration and the one-shot screenshot API, CoreGraphics
+# for the TCC preflight/request pair, the display-mode query that yields the
+# backing scale factor, and CGImage/CGDataProvider to get at the pixels.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+block2 = "0.6"
+objc2-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSArray",
+    "NSEnumerator",
+    "NSError",
+    "NSObjCRuntime",
+    "NSString",
+] }
+objc2-core-foundation = { version = "0.3", default-features = false, features = [
+    "std",
+    "CFBase",
+    "CFCGTypes",
+    "CFData",
+] }
+objc2-core-graphics = { version = "0.3", default-features = false, features = [
+    "std",
+    "objc2",
+    "CGDataProvider",
+    "CGDirectDisplay",
+    "CGImage",
+    "CGWindow",
+] }
+objc2-screen-capture-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "block2",
+    "objc2-core-foundation",
+    "objc2-core-graphics",
+    "SCError",
+    "SCScreenshotManager",
+    "SCShareableContent",
+    "SCStream",
+] }
+
+[lints.rust]
+# `deny` rather than `forbid`: the macOS backend has to call Objective-C, and
+# every `unsafe` block in the crate is confined to `backends/macos/sck.rs`,
+# which opts in with a module-level `#![allow(unsafe_code)]`. `forbid` cannot be
+# opted out of, so it would make a macOS backend impossible; `deny` still fails
+# the build for unsafe code anywhere else.
+unsafe_code = "deny"
