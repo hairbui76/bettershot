@@ -1,6 +1,9 @@
 # Homebrew cask for bettershot.
 #
-# NOT YET PUBLISHED — see ../README.md.
+# NOT YET PUBLISHED — see ../README.md. The .app bundle and an unsigned dmg
+# are built on every packaging change by .github/workflows/packaging.yml,
+# which checks that CFBundleExecutable and CFBundleIconFile resolve inside the
+# bundle. Signing and notarization are what remain.
 #
 # Before this can be submitted to homebrew/cask:
 #   1. Build a universal binary (arm64 + x86_64) and wrap it in an .app bundle.

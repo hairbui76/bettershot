@@ -1,6 +1,9 @@
 # winget manifest for bettershot.
 #
-# NOT YET SUBMITTED — see ../README.md.
+# NOT YET SUBMITTED — see ../README.md. The split below is validated against
+# the published winget schemas on every packaging change, by
+# .github/workflows/packaging.yml, so a structural mistake fails there rather
+# than in the winget-pkgs review queue.
 #
 # Before this can go to microsoft/winget-pkgs:
 #   1. Build the MSI (../windows/bettershot.wxs).

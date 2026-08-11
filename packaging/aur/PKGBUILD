@@ -1,7 +1,10 @@
 # Maintainer: bettershot contributors
 #
-# NOT YET BUILT — see ../README.md. `sha256sums` is a placeholder and must be
-# filled in with `updpkgsums` against a real release tarball before submission.
+# Built on every packaging change by .github/workflows/packaging.yml, in an
+# Arch container, against a tarball of the working tree. What that cannot
+# check is the `source` URL and its checksum, because they need a release to
+# point at: `sha256sums` is still a placeholder and must be filled in with
+# `updpkgsums` against the real release tarball before submission.
 
 pkgname=bettershot
 pkgver=0.1.0
@@ -15,6 +18,13 @@ license=('MPL-2.0')
 # the portal client. gtk3, libayatana-appindicator and xdotool (for libxdo,
 # which the tray's menu layer links) are needed only by the tray, which this
 # package enables.
+#
+# namcap reports libxkbcommon, wayland, libxcb, dbus and
+# libayatana-appindicator as "included, but may not be needed". Do not remove
+# them on that basis. They are loaded with dlopen at runtime rather than
+# linked, so they carry no DT_NEEDED entry for namcap to find, and dropping
+# them produces a package that installs cleanly and then fails to open a
+# window on the user's machine.
 depends=('libxkbcommon' 'wayland' 'libxcb' 'dbus' 'gtk3' 'libayatana-appindicator' 'xdotool')
 makedepends=('cargo' 'pkgconf')
 optdepends=(

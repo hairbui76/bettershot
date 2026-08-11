@@ -6,7 +6,7 @@
 
 ## Status
 
-**56 of 62 roadmap items are done**, and the project now builds and tests
+**59 of 65 roadmap items are done**, and the project now builds and tests
 **green on real Linux, Windows and macOS runners**:
 
 | Job | Result |
@@ -18,6 +18,7 @@
 | Release build | Linux, Windows and macOS, all with `--features tray` |
 | MSI builds (unsigned) | a 4.4 MB installer, built from the WiX definition on every push |
 | Flatpak | builds against the 25.08 runtime, when the manifest or lockfile changes |
+| Packaging | AUR package builds and passes `namcap`; winget manifest validates; macOS bundle and dmg build |
 | Satty reference untouched | the upstream checkout is still out of version control |
 
 The Windows and macOS counts are lower because some tests are Linux-specific
@@ -153,11 +154,14 @@ Deliverable: bettershot as an always-available tool, not just a one-shot CLI.
 - [x] Portable archives and shell/PowerShell installers for Linux, Windows and macOS, declared in `[workspace.metadata.dist]`
 - [x] Windows MSI definition (WiX v4) and winget manifest authored: [`packaging/windows/`](packaging/windows/), [`packaging/winget/`](packaging/winget/)
 - [x] The MSI **actually builds**, on every push, as a CI job that uploads the (unsigned) installer. Adding that job immediately found three faults in a definition that had never been run: a missing WiX UI extension, a `license.rtf` that was not in the tree, and source paths resolved against the wrong directory. It also caught that the build instructions in the file's own header were not legal XML.
-- [ ] **Sign** the MSI and submit to winget-pkgs — needs an Authenticode certificate and a winget-pkgs account. This is now the *only* thing standing between the repository and a publishable installer.
+- [ ] **Sign** the MSI — needs an Authenticode certificate. CI builds the installer itself, so this signature is the only thing between the repository and a publishable one.
 - [x] Flatpak manifest and AUR `PKGBUILD` authored ([`packaging/`](packaging/)); deb/rpm and portable archives come from `cargo dist`; `.desktop` file and AppStream metainfo in `assets/`
 - [x] `.deb` and `.rpm` **built and verified**: `packaging/build-deb.sh` and `build-rpm.sh` produce them, both extract, the binary runs from each package tree, deb dependencies are resolved from the real link set, and the desktop entry and AppStream metainfo pass `desktop-file-validate` and `appstreamcli validate` cleanly
 - [x] The Flatpak **actually builds**, in [`.github/workflows/flatpak.yml`](.github/workflows/flatpak.yml), whenever the manifest, assets or lockfile change. It found four faults in a manifest that had never been run: the source would have copied a 21 GB `target/` and followed the `Satty` symlink out of the repository; the 24.08 runtime's rustc 1.89 is too old for egui's 1.92; Rust never saw the `-L/app/lib` that flatpak-builder passes to C modules, so linking libxdo failed; and the icon was not loadable as an image at all (see below).
-- [ ] Build the AUR package, and publish to Flathub and the AUR — `makepkg` is not available here, and each channel needs an account. Flathub submission is a pull request against `flathub/flathub`.
+- [x] The AUR package **actually builds**, in an Arch container, and passes `namcap`. I had written this off as impossible on a GitHub runner, which was simply wrong. The PKGBUILD is used unmodified: its source is `NAME::URL` and `makepkg` skips the download when a file of that name is present, so a tarball of the working tree exercises `prepare`/`build`/`check`/`package`.
+- [x] The winget manifest **validates** against the published schemas, split into the three documents submission needs. That caught a defect that would have been rejected in review: an unquoted run of zeroes for `InstallerSha256` is read by YAML as the integer `0`, where winget requires a 64-character hex string.
+- [x] The macOS `.app` bundle and an unsigned dmg **actually build**, with `CFBundleExecutable` and `CFBundleIconFile` checked to resolve inside the bundle.
+- [ ] Publish to Flathub, the AUR and winget-pkgs — each needs an account, and winget additionally needs the signed MSI. Flathub submission is a pull request against `flathub/flathub`.
 - [x] Shell completions + manpage from `crates/cli` in `build.rs` (Satty's `build.rs` is the template)
 - [x] Docs site or wiki: per-compositor/per-OS setup guides, Satty migration guide (config mapping table)
 - [x] Crash reporting (opt-in, local-only, contains no image data) and versioned config migration with a refuse-the-future guard
