@@ -57,6 +57,127 @@ is blocked on design or on code that could have been written here.
    workflows, the documented build dependencies for three distribution
    families, the AUR PKGBUILD, and as a Flatpak module.
 
+## Guiding decisions (made up front)
+
+| Decision | Choice | Rationale |
+| --- | --- | --- |
+| Language | Rust (2024 edition) | Matches Satty heritage; best cross-platform native story without a GC or Electron. |
+| UI/windowing | `winit` + `egui` + `wgpu` | Satty's GTK4/Adwaita stack is effectively Linux-only. winit+egui runs identically on Windows/Linux/macOS, egui gives immediate-mode toolbars *and* a painter good enough for annotation overlays; wgpu gives HW acceleration (Satty's "extremely smooth rendering" goal) and shaders for blur. |
+| Capture | Per-OS native backends behind one trait | Windows Graphics Capture (via `windows`/`windows-capture`); Linux: xdg-desktop-portal Screenshot (via `ashpd`) on Wayland + X11 (`xcap`/xcb) fallback; macOS ScreenCaptureKit later. A generic crate alone can't handle portals/permissions well. |
+| License | MPL-2.0 | Same as Satty → porting annotation code is clean. |
+| Config | TOML in platform config dir (`directories`), CLI overrides config | Same precedence rule as Satty; users can migrate Satty configs easily. |
+| Distribution | GitHub releases + winget/MSI (Windows), Flatpak/AUR/deb (Linux), brew cask (macOS later) | |
+
+Crate layout: `crates/core` (model/tools, no OS deps) · `crates/capture` (backends) · `crates/app` (binary, shell/UI) · `crates/cli` (clap defs shared with build.rs for completions/manpage, like `Satty/cli`).
+
+---
+
+## Phase 0 — Bootstrap (repo & skeleton)
+
+Deliverable: an empty-but-real project that builds and CIs green on Linux + Windows.
+
+- [x] `git init`; add `.gitignore` (`/target`, `Satty/` — the reference checkout has its own `.git` and must not be vendored)
+- [x] Cargo workspace with the four crates, `rustfmt.toml`, `deny.toml` (licenses/advisories), MPL-2.0 `LICENSE`
+- [x] `crates/cli`: clap derive struct with the flag surface stubbed (`--filename`, `--capture <region|window|monitor|all>`, `--output-filename`, `--copy-command`, `--config`, `--early-exit`, `--fullscreen`)
+- [x] `crates/app`: winit window opens, egui renders a placeholder, loads an image given `--filename` and displays it (no annotation yet)
+- [x] GitHub Actions: fmt + clippy + test matrix on `ubuntu-latest` and `windows-latest`; release-build artifact upload
+- [x] README skeleton (goal, status badge, Satty attribution)
+
+Acceptance: `cargo run -p bettershot -- --filename x.png` shows the image in a window on both OSes.
+
+## Phase 1 — Annotation editor at Satty parity (the core product)
+
+Deliverable: bettershot as a **Satty replacement** on Windows + Linux: image in (file/stdin), annotated image out (file/clipboard). Ported/adapted from `Satty/src`, decoupled from GTK.
+
+### 1a. Model & rendering foundation
+- [x] `core`: `Vec2D`/rect math (port of `Satty/src/math.rs`), `Style` (color, size, fill toggle), color palette
+- [x] `core`: `Tool` trait (`handle_event -> ToolUpdateResult`) and `Drawable` trait (render into an abstract `Painter`), event types (`Mouse`, `Key`, `Text`) — mirroring `Satty/src/tools/mod.rs` shapes without GTK types
+- [x] `app`: render pipeline — screenshot as wgpu texture → committed drawables → active drawable → crop dimming; all drawable coordinates in image-pixel space, view transform applied at the boundary
+- [x] `core`: undo/redo stacks; `app`: Ctrl+Z / Ctrl+Y
+
+### 1b. Tools (port order = value order)
+- [x] Pointer (temporary red dot), Brush, Line, Arrow
+- [x] Rectangle, Ellipse (filled/outline via Style)
+- [x] Marker/numbered stamp, Highlight (translucent + block modes)
+- [x] Text (egui text input; IME support tracked as a known risk — Satty has a whole `src/ime/` module for this)
+- [x] Obscure: blur and pixelate, sampling the base image. The editor preview and the exported file are produced by the *same* function, so a redaction that looks opaque on screen is opaque in the file — asserted byte-for-byte by tests in both crates.
+- [x] Crop with draggable handles (`drag_box` equivalent)
+
+### 1c. Editor shell
+- [x] Top toolbar (tool selection incl. tool groups), bottom toolbar (palette, custom color picker, size ± controls) — layout reference: `Satty/src/ui/toolbars.rs`
+- [x] Keybindings: Satty-compatible defaults (Enter/Esc actions configurable, Ctrl+C copy, Ctrl+S save, Ctrl+Shift+S save-as dialog via `rfd`, digits = palette colors, Ctrl+T toggle toolbars)
+- [x] Zoom (Ctrl+wheel, pinch) and pan (middle-drag, Alt+arrows)
+- [x] Output: save PNG (filename templates with `chrono` strftime), clipboard via `arboard` + configurable `copy-command` fallback (wl-copy support), post-save actions (`save-after-copy`, exit-on-action)
+- [x] Config: TOML loading with full CLI mirror; document every key in README
+- [x] Notifications on save/copy (`notify-rust` on Linux, Windows toast)
+
+Acceptance: every Satty tool works on both OSes; `cat shot.png | bettershot --filename -` round-trips; config + CLI precedence tested.
+
+## Phase 2 — Native capture (the "better" in bettershot)
+
+Deliverable: bettershot invoked with `--capture`, no external grabber needed.
+
+- [x] `capture`: `CaptureBackend` trait → `RawFrame { rgba, size, monitor geometry, scale_factor }`; monitor + window enumeration types
+- [x] **Linux/Wayland**: xdg-desktop-portal Screenshot + ScreenCast picker via `ashpd` (works on GNOME/KDE/wlroots); document compositor quirks
+- [x] **Linux/X11**: direct grab via `x11rb` (RandR 1.5 monitors, EWMH window stacking) with session auto-detection. `xcap` was rejected on Linux: it pulls wayland/gbm/drm build-time deps even for an X11-only build.
+- [x] **Windows**: Windows Graphics Capture via `xcap` (monitor + window targets); per-monitor-DPI mixed-scale handling. *DXGI fallback for pre-1903 builds not implemented.*
+- [x] Region selection overlay: borderless fullscreen-per-monitor frozen-frame overlay, crosshair, drag-select with magnifier + size readout, window-snap highlighting (hover picks window bounds), Esc cancels
+- [x] Capture modes wired to CLI/config: `region`, `window`, `monitor`, `all` (stitched virtual desktop), `--delay <secs>`
+- [x] Frozen-frame correctness: overlay shows the pre-capture frame so the tool never screenshots itself
+
+Acceptance: `bettershot --capture region` on Sway, GNOME, KDE, X11, and Windows 10/11 produces a correct annotated capture including mixed-DPI multi-monitor setups.
+
+## Phase 3 — Daemon UX & polish
+
+Deliverable: bettershot as an always-available tool, not just a one-shot CLI.
+
+- [x] Global hotkeys (`global-hotkey`), with `--daemon` residency. On Wayland registration is refused by the protocol; bettershot reports it and the compositor-keybinding route is documented.
+- [x] System tray (`tray-icon`): capture region/window/monitor/all, settings, quit. Behind the `tray` feature because it needs GTK 3 on Linux; compile-verified for Windows and in CI on Linux, **not runtime-verified anywhere**.
+- [x] Settings UI (egui) writing back to `config.toml`
+- [x] Post-paint editing: select, drag and delete committed annotations (a stated Satty aspiration). A drag is one undo step, not one per frame.
+- [x] Copy-to-clipboard history of the last N captures (memory-only, PNG-encoded, purgeable from Settings)
+- [x] Filename templates (strftime) and the "copy path" action (Ctrl+Alt+C)
+- [x] Theming: `theme = system | light | dark`, following the desktop by default
+- [x] Localization scaffold: keyed string catalogue with fallback, wired through the toolbar and status messages. English only — a half-finished translation is worse than none.
+- [x] Texture/memory audit for 4K and dual-4K, with measurements and the two decisions that bound memory: [docs/performance.md](docs/performance.md)
+- [x] Startup cost measured for everything bettershot controls: **3.2 ms** to parse arguments, load config and select a backend — ~1.4 ms above the cost of starting any process ([docs/performance.md](docs/performance.md))
+- [x] Startup instrumentation: `-v` now logs "first frame after Nms", so the end-to-end figure can be measured by anyone on real hardware
+- [ ] Confirm end-to-end < 150 ms on mid-range hardware — a headless software-rendered session cannot produce a number that means anything for this target
+
+## Phase 4 — Packaging & 1.0
+
+- [x] Portable archives and shell/PowerShell installers for Linux, Windows and macOS, declared in `[workspace.metadata.dist]`
+- [x] Windows MSI definition (WiX v4) and winget manifest authored: [`packaging/windows/`](packaging/windows/), [`packaging/winget/`](packaging/winget/)
+- [ ] **Sign** the MSI and submit to winget-pkgs — needs an Authenticode certificate and a winget-pkgs account
+- [x] Flatpak manifest and AUR `PKGBUILD` authored ([`packaging/`](packaging/)); deb/rpm and portable archives come from `cargo dist`; `.desktop` file and AppStream metainfo in `assets/`
+- [x] `.deb` and `.rpm` **built and verified**: `packaging/build-deb.sh` and `build-rpm.sh` produce them, both extract, the binary runs from each package tree, deb dependencies are resolved from the real link set, and the desktop entry and AppStream metainfo pass `desktop-file-validate` and `appstreamcli validate` cleanly
+- [ ] Build the Flatpak and AUR packages and publish everything — `flatpak-builder` and `makepkg` are not available here, and each channel needs an account
+- [x] Shell completions + manpage from `crates/cli` in `build.rs` (Satty's `build.rs` is the template)
+- [x] Docs site or wiki: per-compositor/per-OS setup guides, Satty migration guide (config mapping table)
+- [x] Crash reporting (opt-in, local-only, contains no image data) and versioned config migration with a refuse-the-future guard
+- [x] Release process mechanized: a tag-triggered workflow plus an explicit acceptance checklist ([docs/release-checklist.md](docs/release-checklist.md))
+- [ ] Actually tag v1.0 — requires walking that checklist on Windows and the four Linux environments
+
+## Phase 5 — macOS
+
+- [x] `capture` backend on ScreenCaptureKit with the full screen-recording permission flow (TCC preflight/request, stale-permission detection, guidance naming System Settings → Privacy & Security → Screen & System Audio Recording). **Compile-verified and clippy-clean for `aarch64-apple-darwin`, never run on a Mac** — see the caveat below.
+- [x] Cmd-based keybindings: the accelerator modifier already resolves to Command on macOS and Control elsewhere, with a test pinning it
+- [x] Menu bar presence on macOS: the tray icon *is* the menu bar item there, and the whole app including that code is **compile-verified** for `aarch64-apple-darwin`. App bundle `Info.plist` authored ([`packaging/macos/`](packaging/macos/)).
+- [ ] Retina scale verification, and switching to accessory mode so daemon mode leaves the Dock — both need a Mac
+- [x] Homebrew cask authored, including the Screen Recording permission caveat: [`packaging/homebrew/`](packaging/homebrew/)
+- [ ] **Notarize** a universal dmg and publish the cask — needs an Apple Developer ID
+- [x] CI: `macos-latest` in the test matrix, plus a cross-compile job. The library crates (including the macOS capture stub) are **verified** to compile for `aarch64-apple-darwin`; the binary needs a real Mac only because `notify-rust` pulls `mac-notification-sys`, which requires the Apple SDK.
+
+## Phase 6 — Beyond (unscheduled, ideas parking lot)
+
+- OCR of captured region to clipboard (`tesseract` or platform OCR APIs)
+- Pin capture as always-on-top floating reference window
+- Short screen recording → GIF/WebM/MP4
+- Scrolling capture (stitched)
+- Quick-share upload targets (user-configured endpoint only)
+
+---
+
 ## What running it under a real compositor found
 
 bettershot has now been executed against a genuine Wayland session — GNOME
