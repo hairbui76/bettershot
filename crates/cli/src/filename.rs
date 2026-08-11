@@ -369,19 +369,41 @@ mod tests {
 
     #[test]
     fn the_template_is_expanded_before_the_extension_is_checked() {
+        // Asserted on the components rather than the whole string: a
+        // template written with `/` keeps those separators where the path is
+        // returned untouched, but `with_file_name` rebuilds the tail with the
+        // platform separator, so on Windows the result legitimately mixes the
+        // two (`C:\Users\me/shots\shot.webp`). Both are valid there.
+        let expect = |template: &str, name: &str| {
+            let config = config_with(template, SaveFormat::Webp);
+            let path = resolve_output_path(&config, at(14, 30, 5)).expect("configured");
+            assert_eq!(
+                path.file_name().and_then(|n| n.to_str()),
+                Some(name),
+                "got {}",
+                path.display()
+            );
+            assert_eq!(
+                path.parent()
+                    .and_then(|p| p.file_name())
+                    .and_then(|n| n.to_str()),
+                Some("shots"),
+                "got {}",
+                path.display()
+            );
+            assert!(
+                !path.to_string_lossy().starts_with('~'),
+                "the tilde should be gone: {}",
+                path.display()
+            );
+        };
+
         // A template that names its own extension keeps it, even with a
         // different save-format configured.
-        let config = config_with("~/shots/%Y%m%d-%H%M%S.jpg", SaveFormat::Webp);
-        let path = resolve_output_path(&config, at(14, 30, 5)).expect("configured");
-        let path = path.to_string_lossy();
-        assert!(path.ends_with("/shots/20260811-143005.jpg"), "got {path}");
-        assert!(!path.starts_with('~'), "the tilde should be gone: {path}");
+        expect("~/shots/%Y%m%d-%H%M%S.jpg", "20260811-143005.jpg");
 
         // One that does not gets the configured format, after expansion — the
         // point of the test name: `%S` must not be mistaken for an extension.
-        let config = config_with("~/shots/%Y%m%d-%H%M%S", SaveFormat::Webp);
-        let path = resolve_output_path(&config, at(14, 30, 5)).expect("configured");
-        let path = path.to_string_lossy();
-        assert!(path.ends_with("/shots/20260811-143005.webp"), "got {path}");
+        expect("~/shots/%Y%m%d-%H%M%S", "20260811-143005.webp");
     }
 }
