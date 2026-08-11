@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Info.plist for the macOS app bundle.
+
+  NOT YET BUILT OR RUN — see ../README.md and ROADMAP.md Phase 5.
+
+  Notes on two things that are easy to get wrong:
+
+  * There is deliberately no screen-recording usage-description key. Unlike the
+    camera or the microphone, Screen Recording has no `NS*UsageDescription`;
+    macOS shows its own system prompt and the permission is managed in System
+    Settings. Inventing a key here would do nothing.
+
+  * `LSUIElement` is NOT set. Setting it would hide bettershot from the Dock
+    permanently, which is wrong for the one-shot editor. Daemon mode should
+    instead switch to accessory mode at runtime, after argument parsing:
+
+        NSApplication.sharedApplication.setActivationPolicy(.accessory)
+
+    That call needs a Mac to verify, so it is not implemented yet.
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleName</key>
+  <string>bettershot</string>
+
+  <key>CFBundleDisplayName</key>
+  <string>bettershot</string>
+
+  <key>CFBundleIdentifier</key>
+  <string>org.bettershot.Bettershot</string>
+
+  <key>CFBundleExecutable</key>
+  <string>bettershot</string>
+
+  <key>CFBundleIconFile</key>
+  <string>bettershot.icns</string>
+
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+
+  <key>CFBundleShortVersionString</key>
+  <string>0.1.0</string>
+
+  <key>CFBundleVersion</key>
+  <string>0.1.0</string>
+
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+
+  <!-- SCScreenshotManager, which the capture backend uses, needs macOS 14. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>14.0</string>
+
+  <key>NSHighResolutionCapable</key>
+  <true/>
+
+  <key>NSSupportsAutomaticGraphicsSwitching</key>
+  <true/>
+
+  <key>NSHumanReadableCopyright</key>
+  <string>MPL-2.0. Portions adapted from Satty, Copyright the Satty authors.</string>
+
+  <key>CFBundleDocumentTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleTypeName</key>
+      <string>Image</string>
+      <key>CFBundleTypeRole</key>
+      <string>Editor</string>
+      <key>LSItemContentTypes</key>
+      <array>
+        <string>public.png</string>
+        <string>public.jpeg</string>
+        <string>org.webmproject.webp</string>
+      </array>
+    </dict>
+  </array>
+</dict>
+</plist>

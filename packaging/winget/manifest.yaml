@@ -1,0 +1,73 @@
+# winget manifest for bettershot.
+#
+# NOT YET SUBMITTED — see ../README.md.
+#
+# Before this can go to microsoft/winget-pkgs:
+#   1. Build the MSI (../windows/bettershot.wxs).
+#   2. SIGN it with an Authenticode certificate. winget accepts unsigned
+#      installers, but SmartScreen will warn every user who installs one, so
+#      shipping unsigned is worse than not shipping.
+#   3. Publish the release and compute the SHA256 of the published artefact.
+#   4. Replace InstallerSha256 and ReleaseDate below.
+#
+# winget expects three separate files (version / defaultLocale / installer)
+# under manifests/b/bettershot/<version>/. They are kept together here for
+# review and must be split before submission.
+
+# --- bettershot.bettershot.yaml ---
+PackageIdentifier: bettershot.bettershot
+PackageVersion: 0.1.0
+DefaultLocale: en-US
+ManifestType: version
+ManifestVersion: 1.6.0
+
+---
+# --- bettershot.bettershot.locale.en-US.yaml ---
+PackageIdentifier: bettershot.bettershot
+PackageVersion: 0.1.0
+PackageLocale: en-US
+Publisher: bettershot contributors
+PublisherUrl: https://github.com/bettershot
+PackageName: bettershot
+PackageUrl: https://github.com/bettershot/bettershot
+License: MPL-2.0
+LicenseUrl: https://github.com/bettershot/bettershot/blob/main/LICENSE
+ShortDescription: Modern cross-platform screenshot capture and annotation
+Description: |-
+  bettershot captures a region, a window or a whole monitor and lets you mark it
+  up straight away — arrows, boxes, text, numbered steps, highlights, and blur
+  or pixelation for hiding sensitive details — then copies the result to the
+  clipboard or saves it to a file.
+
+  Its annotation model is adapted from Satty, whose small and obvious toolset it
+  deliberately follows. Unlike Satty it takes the screenshot itself, so there is
+  one binary and one hotkey rather than a shell pipeline.
+Moniker: bettershot
+Tags:
+  - screenshot
+  - screen-capture
+  - annotation
+  - screenshot-tool
+  - snipping
+ReleaseNotesUrl: https://github.com/bettershot/bettershot/releases
+ManifestType: defaultLocale
+ManifestVersion: 1.6.0
+
+---
+# --- bettershot.bettershot.installer.yaml ---
+PackageIdentifier: bettershot.bettershot
+PackageVersion: 0.1.0
+MinimumOSVersion: 10.0.18362.0  # Windows 10 1903, the floor for Windows Graphics Capture
+InstallerType: wix
+Scope: user
+InstallModes:
+  - interactive
+  - silent
+UpgradeBehavior: install
+ReleaseDate: "REPLACE-AT-RELEASE"  # ISO 8601, e.g. 2026-08-11
+Installers:
+  - Architecture: x64
+    InstallerUrl: https://github.com/bettershot/bettershot/releases/download/v0.1.0/bettershot-0.1.0-x64.msi
+    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+ManifestType: installer
+ManifestVersion: 1.6.0

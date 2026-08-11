@@ -1,0 +1,74 @@
+# Maintainer: bettershot contributors
+#
+# NOT YET BUILT — see ../README.md. `sha256sums` is a placeholder and must be
+# filled in with `updpkgsums` against a real release tarball before submission.
+
+pkgname=bettershot
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Modern cross-platform screenshot capture and annotation"
+arch=('x86_64' 'aarch64')
+url="https://github.com/bettershot/bettershot"
+license=('MPL-2.0')
+
+# libxkbcommon, wayland and libxcb are needed by the windowing layer; dbus by
+# the portal client; gtk3 and libayatana-appindicator only by the tray, which
+# this package enables.
+depends=('libxkbcommon' 'wayland' 'libxcb' 'dbus' 'gtk3' 'libayatana-appindicator')
+makedepends=('cargo' 'pkgconf')
+optdepends=(
+  'xdg-desktop-portal-wlr: screen capture on wlroots compositors'
+  'xdg-desktop-portal-gnome: screen capture on GNOME'
+  'xdg-desktop-portal-kde: screen capture on KDE Plasma'
+  'wl-clipboard: clipboard fallback via copy-command on Wayland'
+)
+
+source=("$pkgname-$pkgver.tar.gz::$url/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('SKIP')  # replace with updpkgsums
+
+prepare() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  cargo fetch --locked --target "$(rustc -vV | sed -n 's/host: //p')"
+}
+
+build() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  export CARGO_TARGET_DIR=target
+  cargo build --frozen --release -p bettershot --features tray
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  export RUSTUP_TOOLCHAIN=stable
+  # The GUI cannot be exercised in a build chroot, but every library crate's
+  # tests are headless and should pass there.
+  cargo test --frozen --workspace
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 "target/release/$pkgname" "$pkgdir/usr/bin/$pkgname"
+  install -Dm644 assets/org.bettershot.Bettershot.desktop \
+    "$pkgdir/usr/share/applications/org.bettershot.Bettershot.desktop"
+  install -Dm644 assets/org.bettershot.Bettershot.metainfo.xml \
+    "$pkgdir/usr/share/metainfo/org.bettershot.Bettershot.metainfo.xml"
+  install -Dm644 assets/bettershot.svg \
+    "$pkgdir/usr/share/icons/hicolor/scalable/apps/org.bettershot.Bettershot.svg"
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/$pkgname/README.md"
+
+  # Completions and the manpage are emitted into OUT_DIR by build.rs.
+  local out
+  out=$(find target/release/build -name 'bettershot.1' -printf '%h\n' | head -1)
+  if [[ -n "$out" ]]; then
+    install -Dm644 "$out/bettershot.1" "$pkgdir/usr/share/man/man1/$pkgname.1"
+    install -Dm644 "$out/completions/$pkgname.bash" \
+      "$pkgdir/usr/share/bash-completion/completions/$pkgname"
+    install -Dm644 "$out/completions/$pkgname.fish" \
+      "$pkgdir/usr/share/fish/vendor_completions.d/$pkgname.fish"
+    install -Dm644 "$out/completions/_$pkgname" \
+      "$pkgdir/usr/share/zsh/site-functions/_$pkgname"
+  fi
+}

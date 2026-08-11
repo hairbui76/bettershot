@@ -1,0 +1,91 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  WiX v4 installer definition for bettershot.
+
+  NOT YET BUILT — see ../README.md.
+
+  Build:
+    wix build bettershot.wxs -arch x64 -d Version=0.1.0 \
+      -d BinDir=..\..\target\release -o bettershot-0.1.0-x64.msi
+
+  Then SIGN it. An unsigned MSI triggers a SmartScreen warning on every
+  install, which is worse for users than offering only the portable zip.
+    signtool sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 \
+      /f cert.pfx /p <password> bettershot-0.1.0-x64.msi
+
+  UpgradeCode must never change across versions — it is what makes an install
+  an upgrade rather than a second copy. The value below is fixed for this
+  product line.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs"
+     xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+
+  <Package Name="bettershot"
+           Manufacturer="bettershot contributors"
+           Version="$(Version)"
+           UpgradeCode="7f3b9c14-2e6d-4a58-9b47-0d1c8e5a2f30"
+           Scope="perUser"
+           Compressed="yes">
+
+    <MajorUpgrade DowngradeErrorMessage="A newer version of bettershot is already installed." />
+    <MediaTemplate EmbedCab="yes" />
+
+    <!-- Windows Graphics Capture needs Windows 10 1903 or later. -->
+    <Launch Condition="Installed OR VersionNT >= 603"
+            Message="bettershot requires Windows 10 version 1903 or later." />
+
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="INSTALLFOLDER" Name="bettershot" />
+    </StandardDirectory>
+
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShortcutFolder" Name="bettershot" />
+    </StandardDirectory>
+
+    <ComponentGroup Id="ProductComponents" Directory="INSTALLFOLDER">
+      <Component Id="MainExecutable" Guid="*">
+        <File Id="bettershot.exe"
+              Source="$(BinDir)\bettershot.exe"
+              KeyPath="yes" />
+      </Component>
+
+      <Component Id="Licence" Guid="*">
+        <File Id="LICENSE" Source="..\..\LICENSE" KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="Shortcuts" Directory="ShortcutFolder">
+      <Component Id="StartMenuShortcuts" Guid="*">
+        <!-- Region capture is the common case, so that is what the Start
+             menu entry does rather than opening an empty editor. -->
+        <Shortcut Id="CaptureRegion"
+                  Name="bettershot"
+                  Description="Capture a region and annotate it"
+                  Target="[INSTALLFOLDER]bettershot.exe"
+                  Arguments="--capture region"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <Shortcut Id="RunResident"
+                  Name="bettershot (stay resident)"
+                  Description="Run in the tray with global hotkeys"
+                  Target="[INSTALLFOLDER]bettershot.exe"
+                  Arguments="--daemon"
+                  WorkingDirectory="INSTALLFOLDER" />
+        <RemoveFolder Id="RemoveShortcutFolder" On="uninstall" />
+        <RegistryValue Root="HKCU"
+                       Key="Software\bettershot"
+                       Name="installed"
+                       Type="integer"
+                       Value="1"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
+    <Feature Id="Main" Title="bettershot" Level="1">
+      <ComponentGroupRef Id="ProductComponents" />
+      <ComponentGroupRef Id="Shortcuts" />
+    </Feature>
+
+    <ui:WixUI Id="WixUI_Minimal" />
+    <WixVariable Id="WixUILicenseRtf" Value="license.rtf" />
+  </Package>
+</Wix>

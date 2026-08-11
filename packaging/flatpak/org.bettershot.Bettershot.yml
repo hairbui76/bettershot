@@ -1,0 +1,69 @@
+# Flatpak manifest for bettershot.
+#
+# NOT YET BUILT — see ../README.md.
+#
+# Build:
+#   python3 flatpak-cargo-generator.py ../../Cargo.lock -o cargo-sources.json
+#   flatpak-builder --user --install --force-clean build org.bettershot.Bettershot.yml
+#
+# Flathub builds are offline, so every crate must be vendored into
+# cargo-sources.json first; that file is generated, not committed by hand.
+app-id: org.bettershot.Bettershot
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: bettershot
+
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  env:
+    CARGO_HOME: /run/build/bettershot/cargo
+
+finish-args:
+  # Rendering.
+  - --device=dri
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+
+  # Screen capture goes through the portal, which is the only route a sandboxed
+  # app has to the screen. No --socket=session-bus wildcard: the specific
+  # portal talks are enough, and a wildcard would hand the app the whole bus.
+  - --talk-name=org.freedesktop.portal.Desktop
+  - --talk-name=org.freedesktop.portal.Screenshot
+  - --talk-name=org.freedesktop.portal.ScreenCast
+
+  # Desktop notifications on save and copy.
+  - --talk-name=org.freedesktop.Notifications
+
+  # The tray icon, when built with --features tray.
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=org.ayatana.NotificationItem
+
+  # Saving screenshots. Read-write to the user's pictures directory only; the
+  # Save-As dialog goes through the file chooser portal for anywhere else.
+  - --filesystem=xdg-pictures
+
+modules:
+  - name: bettershot
+    buildsystem: simple
+    build-options:
+      env:
+        CARGO_NET_OFFLINE: 'true'
+    build-commands:
+      - cargo --offline fetch --manifest-path Cargo.toml
+      - cargo --offline build --release -p bettershot --features tray
+      - install -Dm755 target/release/bettershot /app/bin/bettershot
+      - install -Dm644 assets/org.bettershot.Bettershot.desktop
+        /app/share/applications/org.bettershot.Bettershot.desktop
+      - install -Dm644 assets/org.bettershot.Bettershot.metainfo.xml
+        /app/share/metainfo/org.bettershot.Bettershot.metainfo.xml
+      - install -Dm644 assets/bettershot.svg
+        /app/share/icons/hicolor/scalable/apps/org.bettershot.Bettershot.svg
+    sources:
+      - type: dir
+        path: ../..
+      # Generated; see the header.
+      - cargo-sources.json
