@@ -40,7 +40,8 @@ jobs:
       - name: Install flatpak-builder
         run: |
           sudo apt-get update
-          sudo apt-get install -y flatpak flatpak-builder python3-aiohttp python3-toml
+          # aiohttp and tomlkit are what flatpak-cargo-generator.py imports.
+          sudo apt-get install -y flatpak flatpak-builder python3-aiohttp python3-tomlkit
 
       # --user throughout: no root, and the runtime cache is a plain directory.
       - name: Add flathub and install the runtime
