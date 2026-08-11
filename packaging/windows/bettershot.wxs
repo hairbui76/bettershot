@@ -5,14 +5,16 @@
   NOT YET BUILT — see ../README.md.
 
   Build (from the repository root):
-    wix extension add -g WixToolset.UI.wixext
+    dotnet tool install --global wix --version 4.0.6
+    wix extension add -g WixToolset.UI.wixext/4.0.6
     wix build packaging\windows\bettershot.wxs -arch x64 ^
       -ext WixToolset.UI.wixext ^
       -d Version=0.1.0 -d BinDir=target\release ^
       -o bettershot-0.1.0-x64.msi
 
   The UI extension is not optional: `ui:WixUI` below lives in an extension
-  namespace, and WiX v4 fails with WIX0200 without it. The CI `msi` job runs
+  namespace, and WiX v4 fails with WIX0200 without it. Its version has to match
+  the tool's, or the build fails with WIX0144 instead. The CI `msi` job runs
   exactly this, so the instructions cannot rot again.
 
   `license.rtf` beside this file is the MPL-2.0 text that the installer's
