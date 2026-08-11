@@ -1,0 +1,28 @@
+[package]
+name = "bettershot-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+# Doubles as the `about` string of the generated `--help`/manpage, so it is the
+# user-facing description of the tool rather than of this library.
+description.workspace = true
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bettershot-core.workspace = true
+chrono.workspace = true
+clap.workspace = true
+clap_complete = "4.6"
+clap_mangen = "0.2"
+directories.workspace = true
+log.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
