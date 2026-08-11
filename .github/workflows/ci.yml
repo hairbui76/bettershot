@@ -164,14 +164,20 @@ jobs:
         run: cargo build --release -p bettershot --features tray
 
       # WiX v4 ships as a dotnet global tool; dotnet is preinstalled here.
+      # The UI extension is required because the installer shows a licence
+      # page: `ui:WixUI` is an extension element, and WiX fails with WIX0200
+      # if it is not registered.
       - name: Install WiX
-        run: dotnet tool install --global wix --version 4.*
+        run: |
+          dotnet tool install --global wix --version 4.*
+          wix extension add -g WixToolset.UI.wixext
 
       - name: Build the MSI
         shell: pwsh
         run: |
           wix build packaging/windows/bettershot.wxs `
             -arch x64 `
+            -ext WixToolset.UI.wixext `
             -d Version=0.1.0 `
             -d BinDir=target/release `
             -o bettershot-0.1.0-x64.msi

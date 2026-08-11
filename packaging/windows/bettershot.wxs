@@ -4,9 +4,20 @@
 
   NOT YET BUILT — see ../README.md.
 
-  Build:
-    wix build bettershot.wxs -arch x64 -d Version=0.1.0 \
-      -d BinDir=..\..\target\release -o bettershot-0.1.0-x64.msi
+  Build (from the repository root):
+    wix extension add -g WixToolset.UI.wixext
+    wix build packaging\windows\bettershot.wxs -arch x64 ^
+      -ext WixToolset.UI.wixext ^
+      -d Version=0.1.0 -d BinDir=target\release ^
+      -o bettershot-0.1.0-x64.msi
+
+  The UI extension is not optional: `ui:WixUI` below lives in an extension
+  namespace, and WiX v4 fails with WIX0200 without it. The CI `msi` job runs
+  exactly this, so the instructions cannot rot again.
+
+  `license.rtf` beside this file is the MPL-2.0 text that the installer's
+  licence page displays, converted to RTF. Regenerate it from `LICENSE` if that
+  ever changes.
 
   Then SIGN it. An unsigned MSI triggers a SmartScreen warning on every
   install, which is worse for users than offering only the portable zip.
