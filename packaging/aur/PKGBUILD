@@ -12,9 +12,10 @@ url="https://github.com/bettershot/bettershot"
 license=('MPL-2.0')
 
 # libxkbcommon, wayland and libxcb are needed by the windowing layer; dbus by
-# the portal client; gtk3 and libayatana-appindicator only by the tray, which
-# this package enables.
-depends=('libxkbcommon' 'wayland' 'libxcb' 'dbus' 'gtk3' 'libayatana-appindicator')
+# the portal client. gtk3, libayatana-appindicator and xdotool (for libxdo,
+# which the tray's menu layer links) are needed only by the tray, which this
+# package enables.
+depends=('libxkbcommon' 'wayland' 'libxcb' 'dbus' 'gtk3' 'libayatana-appindicator' 'xdotool')
 makedepends=('cargo' 'pkgconf')
 optdepends=(
   'xdg-desktop-portal-wlr: screen capture on wlroots compositors'

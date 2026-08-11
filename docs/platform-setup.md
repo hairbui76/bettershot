@@ -91,6 +91,20 @@ sudo dnf install libxkbcommon-devel wayland-devel libxcb-devel dbus-devel
 sudo pacman -S libxkbcommon wayland libxcb dbus
 ```
 
+Building **with `--features tray`** needs three more, because the tray pulls in
+GTK 3 and its menu layer links `libxdo`:
+
+```sh
+# Debian / Ubuntu
+sudo apt install libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+
+# Fedora
+sudo dnf install gtk3-devel libayatana-appindicator-gtk3-devel libxdo-devel
+
+# Arch
+sudo pacman -S gtk3 libayatana-appindicator xdotool
+```
+
 ## Windows
 
 Windows 10 1903+ or Windows 11. No configuration is needed and no permission
