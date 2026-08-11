@@ -66,8 +66,16 @@ jobs:
           for pkg in $(bash -c '
             source packaging/aur/PKGBUILD
             echo "${depends[@]}" "${makedepends[@]}"'); do
-            if pacman -Si "$pkg" >/dev/null 2>&1; then
-              echo "  ok      $pkg"
+            # `pacman -Sp` resolves virtual provides; `pacman -Si` matches only
+            # exact package names and would report `cargo` as missing, when it
+            # is provided by `rust` and is the name the Arch Rust packaging
+            # guidelines tell you to depend on.
+            if provider=$(pacman -Spdd --print-format '%n' "$pkg" 2>/dev/null); then
+              if [ "$provider" = "$pkg" ]; then
+                echo "  ok      $pkg"
+              else
+                echo "  ok      $pkg (provided by $provider)"
+              fi
             else
               echo "  MISSING $pkg"
               missing=1
