@@ -339,12 +339,25 @@ from the first review.
 Things that are accepted as configuration but do not yet do anything. They are
 listed here rather than left to be discovered:
 
-- **`include-cursor`** — the Wayland portal decides for itself whether the
-  cursor is in the shot, and the X11 and Windows backends would each need their
-  own compositing step. The setting is stored and the UI marks it unavailable.
-- **`--output-filename -`** — documented as meaning stdout, and the CLI
-  refuses to give it an extension, but the writer has no stdout branch and
-  would create a file literally named `-`. Do not use it yet.
+- **`include-cursor`** — implemented on X11, still inert elsewhere. The
+  platform-neutral half (`capture::cursor`: premultiplied source-over blending,
+  edge clipping, and the two conventions platforms use for "where the cursor
+  is") is done and unit-tested; the per-backend half is one query each.
+  - **X11** — done, via XFixes `GetCursorImage`.
+  - **Wayland portal** — not possible: the Screenshot portal has no cursor
+    option at all. `ScreenCast` does, which is a different and much larger API.
+  - **Windows** — `xcap` disables cursor capture and will not hand the bitmap
+    back, so this needs a hand-written `GetCursorInfo`/`GetIconInfo`/`GetDIBits`
+    path including the monochrome-cursor case. Not written blind.
+  - **macOS** — belongs with Phase 5; `SCStreamConfiguration.showsCursor` does
+    it in one line once there is a Mac to verify on.
+
+  Backends report this through `Capabilities::cursor`, the settings checkbox is
+  only enabled where it is true, and the CLI logs a warning rather than
+  silently ignoring the flag.
+That is the whole list. `--output-filename -` used to be here too; it now
+writes the encoded image to stdout, with a regression test that asserts no file
+named `-` is created.
 
 ## Not achievable without more hardware
 

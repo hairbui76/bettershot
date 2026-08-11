@@ -92,6 +92,10 @@ pub struct Capabilities {
     /// Capturing may raise a permission prompt, and may fail with
     /// [`CaptureError::PermissionDenied`].
     pub may_prompt_for_permission: bool,
+    /// [`crate::CaptureBackend::cursor`] can return a real cursor bitmap, so
+    /// `--include-cursor` will do something. False on the Wayland portal, whose
+    /// Screenshot API has no cursor control at all.
+    pub cursor: bool,
 }
 
 impl Capabilities {
@@ -105,6 +109,7 @@ impl Capabilities {
         window_enumeration: false,
         interactive_only: false,
         may_prompt_for_permission: false,
+        cursor: false,
     };
 
     /// A backend with unrestricted direct access to the display server: every
@@ -118,6 +123,7 @@ impl Capabilities {
         window_enumeration: true,
         interactive_only: false,
         may_prompt_for_permission: false,
+        cursor: true,
     };
 
     /// Can this backend serve `target`?

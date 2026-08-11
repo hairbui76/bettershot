@@ -4,8 +4,9 @@
 use std::time::Duration;
 
 use crate::{
-    BackendChoice, BackendSelection, Capabilities, CaptureError, CaptureTarget, Environment,
-    MonitorInfo, RawFrame, VirtualDesktop, WindowInfo, backends, select_backend,
+    BackendChoice, BackendSelection, Capabilities, CaptureError, CaptureTarget, CursorImage,
+    Environment, MonitorInfo, RawFrame, VirtualDesktop, WindowInfo, backends, composite_cursor,
+    select_backend,
 };
 
 /// One way of getting pixels off the screen.
@@ -32,6 +33,20 @@ pub trait CaptureBackend: Send {
 
     /// Which targets this backend can actually serve.
     fn capabilities(&self) -> Capabilities;
+
+    /// The cursor as it looks right now, for `--include-cursor`.
+    ///
+    /// Separate from [`CaptureBackend::capture`] because the cursor is not in
+    /// the captured pixels on any platform — compositors draw it on its own
+    /// plane — so including it is always a second query plus a blend, and the
+    /// blend ([`crate::composite_cursor`]) is platform-neutral.
+    ///
+    /// `Ok(None)` means "nothing to draw": the pointer is hidden, or has left
+    /// the screen. Backends that cannot ask at all keep this default and
+    /// report `cursor: false` in their [`Capabilities`].
+    fn cursor(&self) -> Result<Option<CursorImage>, CaptureError> {
+        Ok(None)
+    }
 
     /// The monitors wrapped in the layout helper. Provided so callers do not
     /// re-implement it.
@@ -89,6 +104,46 @@ pub fn capture_after(
     backend.capture(target)
 }
 
+/// [`capture_after`], then blend the pointer in when `include_cursor` is set.
+///
+/// The cursor is sampled *after* the delay and the grab, which is as close to
+/// the captured instant as a two-call platform API allows.
+pub fn capture_after_including_cursor(
+    backend: &dyn CaptureBackend,
+    target: CaptureTarget,
+    delay: Duration,
+    include_cursor: bool,
+) -> Result<RawFrame, CaptureError> {
+    let mut frame = capture_after(backend, target, delay)?;
+    if include_cursor {
+        draw_cursor_into(backend, &mut frame);
+    }
+    Ok(frame)
+}
+
+/// Blend the backend's current cursor into `frame`.
+///
+/// Deliberately infallible: the user already has their screenshot by this
+/// point, and a cursor that could not be read is a cosmetic loss, not a reason
+/// to throw the pixels away. Failures are logged and the frame is left alone.
+pub fn draw_cursor_into(backend: &dyn CaptureBackend, frame: &mut RawFrame) {
+    match backend.cursor() {
+        Ok(Some(cursor)) => {
+            log::debug!(
+                "drawing the {}x{} cursor at {:?}",
+                cursor.width,
+                cursor.height,
+                cursor.position
+            );
+            composite_cursor(frame, &cursor);
+        }
+        Ok(None) => log::debug!("the {} backend reports no visible cursor", backend.name()),
+        Err(e) => {
+            log::warn!("could not read the cursor ({e}); the screenshot will not show it");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -99,16 +154,36 @@ mod tests {
     use super::*;
     use crate::MonitorId;
 
+    /// What a [`FakeBackend`] should do when asked for the cursor.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Cursor {
+        /// No pointer on screen.
+        Hidden,
+        /// An opaque 1x1 red pointer at the frame's top-left.
+        Red,
+        /// The platform query failed.
+        Fails,
+    }
+
     /// A backend that records how often it was asked to capture, so the delay
     /// helper can be tested without a display.
     struct FakeBackend {
         captures: AtomicUsize,
+        cursor: Cursor,
     }
 
     impl FakeBackend {
         fn new() -> Self {
             Self {
                 captures: AtomicUsize::new(0),
+                cursor: Cursor::Hidden,
+            }
+        }
+
+        fn with_cursor(cursor: Cursor) -> Self {
+            Self {
+                captures: AtomicUsize::new(0),
+                cursor,
             }
         }
     }
@@ -134,11 +209,27 @@ mod tests {
 
         fn capture(&self, _target: CaptureTarget) -> Result<RawFrame, CaptureError> {
             self.captures.fetch_add(1, Ordering::SeqCst);
-            RawFrame::filled(2, 2, [1, 2, 3, 4], Vec2D::ZERO, 1.0)
+            RawFrame::filled(2, 2, [0, 0, 0, 255], Vec2D::ZERO, 1.0)
         }
 
         fn capabilities(&self) -> Capabilities {
             Capabilities::FULL
+        }
+
+        fn cursor(&self) -> Result<Option<CursorImage>, CaptureError> {
+            match self.cursor {
+                Cursor::Hidden => Ok(None),
+                Cursor::Red => Ok(Some(
+                    CursorImage::from_premultiplied(
+                        1,
+                        1,
+                        vec![255, 0, 0, 255],
+                        crate::CursorAnchor::TopLeft(Vec2D::ZERO),
+                    )
+                    .unwrap(),
+                )),
+                Cursor::Fails => Err(CaptureError::unsupported("no cursor here")),
+            }
         }
     }
 
@@ -171,6 +262,82 @@ mod tests {
         let desktop = FakeBackend::new().virtual_desktop().unwrap();
         assert_eq!(desktop.len(), 1);
         assert_eq!(desktop.bounds(), Rect::from_xywh(0.0, 0.0, 100.0, 100.0));
+    }
+
+    #[test]
+    fn the_cursor_is_only_drawn_when_it_is_asked_for() {
+        let backend = FakeBackend::with_cursor(Cursor::Red);
+
+        let without = capture_after_including_cursor(
+            &backend,
+            CaptureTarget::FullDesktop,
+            Duration::ZERO,
+            false,
+        )
+        .unwrap();
+        assert_eq!(without.pixel(0, 0), Some([0, 0, 0, 255]));
+
+        let with = capture_after_including_cursor(
+            &backend,
+            CaptureTarget::FullDesktop,
+            Duration::ZERO,
+            true,
+        )
+        .unwrap();
+        assert_eq!(with.pixel(0, 0), Some([255, 0, 0, 255]));
+        // Only the pixel under the cursor changes.
+        assert_eq!(with.pixel(1, 1), Some([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn a_hidden_cursor_leaves_the_frame_alone() {
+        let frame = capture_after_including_cursor(
+            &FakeBackend::with_cursor(Cursor::Hidden),
+            CaptureTarget::FullDesktop,
+            Duration::ZERO,
+            true,
+        )
+        .unwrap();
+        assert_eq!(frame.pixel(0, 0), Some([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn a_cursor_query_that_fails_still_yields_the_screenshot() {
+        // Losing the pointer is cosmetic; losing the capture is not.
+        let frame = capture_after_including_cursor(
+            &FakeBackend::with_cursor(Cursor::Fails),
+            CaptureTarget::FullDesktop,
+            Duration::ZERO,
+            true,
+        )
+        .unwrap();
+        assert_eq!(frame.width, 2);
+        assert_eq!(frame.pixel(0, 0), Some([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn backends_default_to_having_no_cursor_to_offer() {
+        // A backend that does not override `cursor()` must not claim one.
+        struct Bare;
+        impl CaptureBackend for Bare {
+            fn name(&self) -> &'static str {
+                "bare"
+            }
+            fn monitors(&self) -> Result<Vec<MonitorInfo>, CaptureError> {
+                Ok(Vec::new())
+            }
+            fn windows(&self) -> Result<Vec<WindowInfo>, CaptureError> {
+                Ok(Vec::new())
+            }
+            fn capture(&self, _: CaptureTarget) -> Result<RawFrame, CaptureError> {
+                Err(CaptureError::NoDisplay)
+            }
+            fn capabilities(&self) -> Capabilities {
+                Capabilities::NONE
+            }
+        }
+        assert!(Bare.cursor().unwrap().is_none());
+        assert!(!Bare.capabilities().cursor);
     }
 
     #[test]

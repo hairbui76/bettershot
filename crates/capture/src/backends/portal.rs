@@ -463,6 +463,10 @@ mod tests {
         assert!(!caps.window);
         assert!(!caps.monitor_enumeration);
         assert!(!caps.window_enumeration);
+        // The Screenshot portal has no cursor option, so `--include-cursor`
+        // must not be offered here rather than silently doing nothing.
+        assert!(!caps.cursor);
+        assert!(PortalBackend::new().cursor().unwrap().is_none());
     }
 
     #[test]

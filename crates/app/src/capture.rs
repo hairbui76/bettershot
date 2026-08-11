@@ -44,7 +44,21 @@ pub fn acquire(mode: CaptureMode, config: &Config) -> Result<Acquired> {
         CaptureMode::Monitor => primary_monitor_target(backend.as_ref()),
     };
 
-    let frame = backend.capture(target).context("capturing the screen")?;
+    let mut frame = backend.capture(target).context("capturing the screen")?;
+
+    // The pointer is never in the captured pixels — compositors draw it on a
+    // separate plane — so it has to be fetched and blended in separately.
+    if config.capture.include_cursor {
+        if backend.capabilities().cursor {
+            bettershot_capture::draw_cursor_into(backend.as_ref(), &mut frame);
+        } else {
+            log::warn!(
+                "the {} backend cannot supply the cursor, so --include-cursor has no effect",
+                backend.name()
+            );
+        }
+    }
+
     let image = non_empty(frame_to_image(&frame)?)?;
 
     let needs_selection = matches!(mode, CaptureMode::Region | CaptureMode::Window);
@@ -66,6 +80,23 @@ pub fn acquire(mode: CaptureMode, config: &Config) -> Result<Acquired> {
         origin: frame.origin,
         needs_selection,
         mode,
+    })
+}
+
+/// Whether this session's capture backend can supply a cursor bitmap, so the
+/// UI can offer `include-cursor` only where it does something.
+///
+/// Cached for the life of the process: the answer depends on which backend the
+/// session selected and, on X11, whether the server has XFixes — neither of
+/// which changes while bettershot is running. Constructing a backend to ask is
+/// cheap (the portal's is a unit struct; X11's opens a local socket) and
+/// involves no capture and no permission prompt.
+pub fn cursor_supported() -> bool {
+    static SUPPORTED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *SUPPORTED.get_or_init(|| {
+        bettershot_capture::default_backend()
+            .map(|backend| backend.capabilities().cursor)
+            .unwrap_or(false)
     })
 }
 

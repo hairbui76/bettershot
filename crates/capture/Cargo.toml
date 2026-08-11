@@ -22,7 +22,7 @@ log.workspace = true
 [target.'cfg(target_os = "linux")'.dependencies]
 ashpd = { version = "0.13", default-features = false, features = ["tokio", "screenshot"] }
 tokio = { version = "1", default-features = false, features = ["rt", "net", "time"] }
-x11rb = { version = "0.13", default-features = false, features = ["randr"] }
+x11rb = { version = "0.13", default-features = false, features = ["randr", "xfixes"] }
 image.workspace = true
 
 # Windows. `xcap` wraps Windows Graphics Capture / DXGI + the Win32 window APIs

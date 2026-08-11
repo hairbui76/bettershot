@@ -213,7 +213,17 @@ impl CaptureBackend for WindowsBackend {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::FULL
+        Capabilities {
+            // `xcap` calls `SetIsCursorCaptureEnabled(false)` and exposes no way
+            // to read the cursor bitmap back, so serving `--include-cursor` here
+            // means a hand-written `GetCursorInfo` + `GetIconInfo` + `GetDIBits`
+            // path, including the monochrome-cursor case and the two `HBITMAP`s
+            // that must be freed. That is not code to write blind: claiming the
+            // capability without it would just move the failure somewhere less
+            // obvious. `crate::cursor` already has the platform-neutral half.
+            cursor: false,
+            ..Capabilities::FULL
+        }
     }
 }
 

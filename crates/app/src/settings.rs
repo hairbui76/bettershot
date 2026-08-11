@@ -266,14 +266,20 @@ impl SettingsWindow {
             changed = true;
         }
 
-        // Disabled rather than removed: the setting is real and will work, but
-        // no capture backend reads it yet, and a checkbox that does nothing is
-        // worse than one that says so.
-        ui.add_enabled_ui(false, |ui| {
-            ui.checkbox(
-                &mut config.capture.include_cursor,
-                "Include the cursor (not implemented yet)",
-            );
+        // Only offered where the session's backend can actually produce a
+        // cursor: the Wayland screenshot portal has no cursor control at all,
+        // and an X server without XFixes cannot be asked. A checkbox that
+        // silently does nothing is worse than one that says why.
+        let cursor_supported = crate::capture::cursor_supported();
+        ui.add_enabled_ui(cursor_supported, |ui| {
+            let label = if cursor_supported {
+                "Include the cursor"
+            } else {
+                "Include the cursor (unavailable on this display server)"
+            };
+            changed |= ui
+                .checkbox(&mut config.capture.include_cursor, label)
+                .changed();
         });
         changed |= ui
             .checkbox(

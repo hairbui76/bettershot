@@ -25,12 +25,13 @@
 use bettershot_core::{Rect, Vec2D};
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
+use x11rb::protocol::xfixes;
 use x11rb::protocol::xproto::{self, AtomEnum, ConnectionExt as _, ImageFormat, ImageOrder};
 use x11rb::rust_connection::RustConnection;
 
 use crate::{
-    Capabilities, CaptureBackend, CaptureError, CaptureTarget, MonitorId, MonitorInfo, RawFrame,
-    VirtualDesktop, WindowId, WindowInfo,
+    Capabilities, CaptureBackend, CaptureError, CaptureTarget, CursorAnchor, CursorImage,
+    MonitorId, MonitorInfo, RawFrame, VirtualDesktop, WindowId, WindowInfo,
     geometry::PixelRect,
     pixels::{ZPixmapFormat, zpixmap_to_rgba},
     target::resolve_target,
@@ -58,6 +59,10 @@ pub(crate) struct X11Backend {
     root_size: (u16, u16),
     format: ZPixmapFormat,
     atoms: Atoms,
+    /// Whether XFixes is present, negotiated once at connect time. The cursor
+    /// is the only thing this backend uses it for, and plenty of minimal or
+    /// remote X servers ship without it.
+    has_xfixes: bool,
 }
 
 impl X11Backend {
@@ -115,12 +120,29 @@ impl X11Backend {
             wm_class: intern(&conn, b"WM_CLASS")?,
         };
 
+        // XFixes requires a version handshake before any of its other requests,
+        // and answers with an error when the extension is not present at all.
+        // Either way the answer is just "no cursor from this server", so the
+        // failure is recorded rather than propagated: it must not stop a
+        // screenshot.
+        // Version 1 is deliberate: `GetCursorImage` is a version-1 request, and
+        // asking for the lowest version that has it keeps the handshake working
+        // against the oldest servers.
+        let has_xfixes = xfixes::query_version(&conn, 1, 0)
+            .ok()
+            .and_then(|cookie| cookie.reply().ok())
+            .is_some();
+        if !has_xfixes {
+            log::debug!("the X server has no XFixes extension; --include-cursor will be inert");
+        }
+
         Ok(Self {
             conn,
             root,
             root_size,
             format,
             atoms,
+            has_xfixes,
         })
     }
 
@@ -373,8 +395,72 @@ impl CaptureBackend for X11Backend {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities::FULL
+        Capabilities {
+            cursor: self.has_xfixes,
+            ..Capabilities::FULL
+        }
     }
+
+    fn cursor(&self) -> Result<Option<CursorImage>, CaptureError> {
+        if !self.has_xfixes {
+            return Ok(None);
+        }
+        let reply = xfixes::get_cursor_image(&self.conn)
+            .map_err(backend_err)?
+            .reply()
+            .map_err(backend_err)?;
+
+        cursor_from_xfixes(
+            reply.x,
+            reply.y,
+            reply.width,
+            reply.height,
+            reply.xhot,
+            reply.yhot,
+            &reply.cursor_image,
+        )
+    }
+}
+
+/// Turn an XFixes `GetCursorImage` reply into a [`CursorImage`].
+///
+/// Split out from the request so the interpretation of the reply — which is the
+/// part that can be silently wrong — is testable without an X server.
+///
+/// The key decision is the anchor. `x`/`y` are the *sprite position*, i.e. the
+/// hotspot, in root-window coordinates: `ProcXFixesGetCursorImage` assigns
+/// `GetSpritePosition`'s result straight through and reports `xhot`/`yhot`
+/// alongside it. The protocol spec's "x and y are the current cursor position"
+/// reads as though it might already be the bitmap's corner; it is not, and
+/// treating it as one draws the pointer offset by its hotspot.
+///
+/// Root-window coordinates are X11's virtual-desktop coordinates, which is the
+/// space a [`RawFrame`]'s origin lives in, so no further rebasing is needed.
+#[allow(clippy::too_many_arguments)]
+fn cursor_from_xfixes(
+    x: i16,
+    y: i16,
+    width: u16,
+    height: u16,
+    xhot: u16,
+    yhot: u16,
+    words: &[u32],
+) -> Result<Option<CursorImage>, CaptureError> {
+    // A hidden pointer comes back as a zero-sized image rather than an error.
+    if width == 0 || height == 0 {
+        return Ok(None);
+    }
+    CursorImage::from_argb_words(
+        u32::from(width),
+        u32::from(height),
+        words,
+        CursorAnchor::Hotspot {
+            position: Vec2D::new(f32::from(x), f32::from(y)),
+            xhot: u32::from(xhot),
+            yhot: u32::from(yhot),
+        },
+    )
+    .map(Some)
 }
 
 /// Decode an X11 text property's bytes.
@@ -416,6 +502,54 @@ fn backend_err(err: impl std::fmt::Display) -> CaptureError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The reply for a 2x2 cursor whose hotspot is one pixel in from the
+    /// top-left, sitting at root coordinate (50, 60).
+    fn sample_reply() -> Result<Option<CursorImage>, CaptureError> {
+        cursor_from_xfixes(50, 60, 2, 2, 1, 1, &[0xffff_0000; 4])
+    }
+
+    #[test]
+    fn the_reply_position_is_the_hotspot_not_the_bitmap_corner() {
+        // The server reports where the *point of the arrow* is, so the bitmap
+        // starts one pixel up and to the left of it. Reading the reply as a
+        // corner would put the cursor at (50, 60) and draw it low and right.
+        let cursor = sample_reply().unwrap().unwrap();
+        assert_eq!(cursor.position, Vec2D::new(49.0, 59.0));
+    }
+
+    #[test]
+    fn a_cursor_drawn_from_a_reply_lands_on_its_hotspot() {
+        // End to end: the pixel the user thinks they are pointing at is the
+        // one the hotspot covers.
+        let cursor = sample_reply().unwrap().unwrap();
+        let mut frame = RawFrame::filled(100, 100, [0, 0, 0, 255], Vec2D::ZERO, 1.0).unwrap();
+        crate::composite_cursor(&mut frame, &cursor);
+        assert_eq!(frame.pixel(50, 60), Some([255, 0, 0, 255]), "the hotspot");
+        assert_eq!(frame.pixel(49, 59), Some([255, 0, 0, 255]), "top-left");
+        // The bitmap is 2x2 anchored at (49, 59), so (51, 61) is past it.
+        assert_eq!(frame.pixel(51, 61), Some([0, 0, 0, 255]));
+    }
+
+    #[test]
+    fn a_hidden_cursor_is_reported_as_a_zero_sized_image() {
+        assert!(cursor_from_xfixes(0, 0, 0, 0, 0, 0, &[]).unwrap().is_none());
+    }
+
+    #[test]
+    fn a_negative_cursor_position_is_kept() {
+        // Monitors left of or above the primary give the pointer negative root
+        // coordinates; clamping them to zero would teleport the cursor.
+        let cursor = cursor_from_xfixes(-30, -12, 1, 1, 0, 0, &[0xffff_ffff])
+            .unwrap()
+            .unwrap();
+        assert_eq!(cursor.position, Vec2D::new(-30.0, -12.0));
+    }
+
+    #[test]
+    fn a_truncated_cursor_reply_is_an_error_not_a_panic() {
+        assert!(cursor_from_xfixes(0, 0, 8, 8, 0, 0, &[0; 2]).is_err());
+    }
 
     #[test]
     fn utf8_titles_decode_as_utf8() {

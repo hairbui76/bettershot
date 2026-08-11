@@ -153,6 +153,11 @@ pub(crate) fn capabilities_for(can_screenshot: bool) -> Capabilities {
         // The first capture on a fresh install raises the Screen Recording
         // prompt, and a denied permission is a hard failure.
         may_prompt_for_permission: true,
+        // ScreenCaptureKit can composite the pointer itself, via
+        // `SCStreamConfiguration.showsCursor`, so this is a matter of wiring
+        // rather than a platform limit — but it belongs with the rest of the
+        // macOS capture work in Phase 5, which needs a Mac to verify.
+        cursor: false,
     }
 }
 
