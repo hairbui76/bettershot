@@ -319,6 +319,12 @@ impl Tool for TextTool {
             Key::Right => text.move_right(),
             Key::Home => text.move_home(),
             Key::End => text.move_end(),
+            // A character key with Ctrl, Alt or Meta held is somebody's
+            // shortcut, not something to type. Only the *platform's*
+            // accelerator is filtered above, so without this Ctrl+S inserted a
+            // literal "s" on macOS, where Command is the accelerator and
+            // Control is not. Caught by CI on a real Mac.
+            _ if event.modifiers.ctrl || event.modifiers.alt || event.modifiers.meta => false,
             _ => match event.key.as_char() {
                 Some(c) => {
                     text.insert(&c.to_string());
@@ -478,13 +484,51 @@ mod tests {
 
     #[test]
     fn accelerators_pass_through_to_the_shell() {
+        // Every modified character key must be left alone, on every platform.
+        // This used to check only the platform's own accelerator, so on macOS
+        // — where Command is the accelerator and Control is not — Ctrl+S typed
+        // a literal "s" into the annotation. CI on a real Mac found it.
+        for modifiers in [
+            Modifiers::ctrl(),
+            Modifiers {
+                alt: true,
+                ..Modifiers::NONE
+            },
+            Modifiers {
+                meta: true,
+                ..Modifiers::NONE
+            },
+            Modifiers {
+                ctrl: true,
+                shift: true,
+                ..Modifiers::NONE
+            },
+        ] {
+            let mut tool = TextTool::new(Style::default());
+            click_at(&mut tool, Vec2D::ZERO);
+            type_str(&mut tool, "x");
+
+            let shortcut = KeyEvent::new(Key::Character('s'), modifiers);
+            assert!(
+                !tool.handle_key_event(shortcut).needs_redraw(),
+                "{modifiers:?} should not reach the text box"
+            );
+            assert_eq!(
+                tool.editing.as_ref().unwrap().text,
+                "x",
+                "{modifiers:?} typed a character it should have passed through"
+            );
+        }
+    }
+
+    #[test]
+    fn shift_still_types() {
+        // Shift is a modifier but not a shortcut; it must not be filtered.
         let mut tool = TextTool::new(Style::default());
         click_at(&mut tool, Vec2D::ZERO);
-        type_str(&mut tool, "x");
-        let ctrl_s = KeyEvent::new(Key::Character('s'), Modifiers::ctrl());
-        assert!(!tool.handle_key_event(ctrl_s).needs_redraw());
-        // The 's' must not have been typed into the box.
-        assert_eq!(tool.editing.as_ref().unwrap().text, "x");
+        let shifted = KeyEvent::new(Key::Character('S'), Modifiers::shift());
+        assert!(tool.handle_key_event(shifted).needs_redraw());
+        assert_eq!(tool.editing.as_ref().unwrap().text, "S");
     }
 
     // --- caret arithmetic on multi-byte text --------------------------------

@@ -161,7 +161,7 @@ impl CaptureBackend for WindowsBackend {
         }
 
         // xcap: larger z is nearer the viewer. bettershot: 0 is frontmost.
-        described.sort_by(|a, b| b.0.cmp(&a.0));
+        described.sort_by_key(|(z, _)| std::cmp::Reverse(*z));
         Ok(described
             .into_iter()
             .enumerate()

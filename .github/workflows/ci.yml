@@ -76,19 +76,23 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb1-dev \
             libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config
+      # Clippy, not just check: several lints only fire on the code behind a
+      # platform `cfg`, so a host-only clippy run cannot see them. The first
+      # CI run failed on exactly this.
       - name: Check for Windows
-        run: cargo check --workspace --target x86_64-pc-windows-msvc
+        run: cargo clippy --workspace --all-targets --target x86_64-pc-windows-msvc -- -D warnings
       - name: Check the libraries for macOS
         run: |
-          cargo check --target aarch64-apple-darwin \
-            -p bettershot-core -p bettershot-capture -p bettershot-render -p bettershot-cli
+          cargo clippy --target aarch64-apple-darwin --all-targets \
+            -p bettershot-core -p bettershot-capture -p bettershot-render -p bettershot-cli \
+            -- -D warnings
       # The binary too, including the menu-bar/tray code. Notifications are
       # excluded because `notify-rust` pulls `mac-notification-sys`, whose
       # build script needs the Apple SDK; the macos-latest job covers that.
       - name: Check the binary for macOS
         run: |
-          cargo check --target aarch64-apple-darwin -p bettershot \
-            --no-default-features --features tray
+          cargo clippy --target aarch64-apple-darwin -p bettershot \
+            --no-default-features --features tray -- -D warnings
 
   # `Satty/` is an upstream reference checkout. It must never be built, and
   # never committed into this repository's history.
