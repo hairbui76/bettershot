@@ -11,9 +11,9 @@
 
 | Job | Result |
 | --- | --- |
-| Test (ubuntu-latest) | 711 tests |
-| Test (windows-latest) | 694 tests |
-| Test (macos-latest) | 694 tests |
+| Test (ubuntu-latest) | 739 tests |
+| Test (windows-latest) | 716 tests |
+| Test (macos-latest) | 717 tests |
 | Cross-compile check | clippy clean for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
 | Release build | Linux, Windows and macOS, all with `--features tray` |
 | Satty reference untouched | the upstream checkout is still out of version control |
