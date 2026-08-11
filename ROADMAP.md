@@ -6,12 +6,12 @@
 
 ## Status
 
-**53 of 59 roadmap items are done**, and the project now builds and tests
+**54 of 60 roadmap items are done**, and the project now builds and tests
 **green on real Linux, Windows and macOS runners**:
 
 | Job | Result |
 | --- | --- |
-| Test (ubuntu-latest) | 739 tests |
+| Test (ubuntu-latest) | 740 tests |
 | Test (windows-latest) | 716 tests |
 | Test (macos-latest) | 717 tests |
 | Cross-compile check | clippy clean for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
@@ -27,7 +27,9 @@ amount of local care could have found — see
 
 The six remaining items need a signing certificate, an Apple Developer ID,
 distribution accounts, a Mac to *use*, or a desktop session that renders. None
-is blocked on design or on code that could have been written here.
+is blocked on design or on code that could have been written here — every one
+of them is a procurement or hardware dependency, which is why they are listed
+separately in [Not achievable without more hardware](#not-achievable-without-more-hardware).
 
 ## What CI found that nothing local could
 
@@ -163,7 +165,8 @@ Deliverable: bettershot as an always-available tool, not just a one-shot CLI.
 - [x] `capture` backend on ScreenCaptureKit with the full screen-recording permission flow (TCC preflight/request, stale-permission detection, guidance naming System Settings → Privacy & Security → Screen & System Audio Recording). **Compile-verified and clippy-clean for `aarch64-apple-darwin`, never run on a Mac** — see the caveat below.
 - [x] Cmd-based keybindings: the accelerator modifier already resolves to Command on macOS and Control elsewhere, with a test pinning it
 - [x] Menu bar presence on macOS: the tray icon *is* the menu bar item there, and the whole app including that code is **compile-verified** for `aarch64-apple-darwin`. App bundle `Info.plist` authored ([`packaging/macos/`](packaging/macos/)).
-- [ ] Retina scale verification, and switching to accessory mode so daemon mode leaves the Dock — both need a Mac
+- [x] Accessory activation policy, so daemon mode leaves the Dock: `crates/app/src/platform.rs`, applied on the daemon path only (a one-shot capture genuinely is a foreground app). **Compile-verified for `aarch64-apple-darwin`** against the real AppKit bindings and covered by the cross-compile job, to the same standard as the ScreenCaptureKit backend — never run on a Mac.
+- [ ] Retina scale verification — needs a Mac. Nothing about a HiDPI backing scale can be confirmed from a Linux container, and the accessory policy above still wants a human to confirm the Dock icon actually disappears.
 - [x] Homebrew cask authored, including the Screen Recording permission caveat: [`packaging/homebrew/`](packaging/homebrew/)
 - [ ] **Notarize** a universal dmg and publish the cask — needs an Apple Developer ID
 - [x] CI: `macos-latest` in the test matrix, plus a cross-compile job. The library crates (including the macOS capture stub) are **verified** to compile for `aarch64-apple-darwin`; the binary needs a real Mac only because `notify-rust` pulls `mac-notification-sys`, which requires the Apple SDK.

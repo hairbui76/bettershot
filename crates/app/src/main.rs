@@ -18,6 +18,7 @@ mod i18n;
 mod notify;
 mod output;
 mod overlay;
+mod platform;
 mod settings;
 mod view;
 
@@ -90,6 +91,9 @@ fn build_app(args: &Args, config: Config) -> Result<BettershotApp> {
     // Daemon mode outranks everything: it is a request to stay running, not to
     // do one thing and exit.
     if config.daemon.enabled {
+        // No window until a hotkey or the menu bar asks for one, so on macOS
+        // this should not sit in the Dock.
+        platform::become_background_app();
         return BettershotApp::idle(config).map_err(|e| anyhow::anyhow!(e));
     }
 

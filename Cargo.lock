@@ -389,6 +389,8 @@ dependencies = [
  "image",
  "log",
  "notify-rust",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
  "rfd",
  "tempfile",
  "thiserror 2.0.20",

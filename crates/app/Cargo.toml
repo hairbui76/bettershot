@@ -54,6 +54,17 @@ rfd = "0.17"
 global-hotkey = "0.8"
 tray-icon = { version = "0.24", optional = true }
 
+# macOS. Pure-Rust AppKit bindings, so `cargo clippy --target
+# aarch64-apple-darwin` type-checks this from a Linux machine. Only the
+# activation-policy call is used; the feature list is trimmed to match.
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+    "std",
+    "NSApplication",
+    "NSResponder",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std"] }
+
 [target.'cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))'.dependencies]
 notify-rust = { version = "4.18", optional = true }
 
