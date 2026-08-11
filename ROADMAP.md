@@ -11,7 +11,7 @@
 
 | Job | Result |
 | --- | --- |
-| Test (ubuntu-latest) | 755 tests |
+| Test (ubuntu-latest) | 757 tests |
 | Test (windows-latest) | 716 tests |
 | Test (macos-latest) | 717 tests |
 | Cross-compile check | clippy clean for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |

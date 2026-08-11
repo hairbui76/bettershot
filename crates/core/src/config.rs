@@ -1118,3 +1118,44 @@ mod tests {
         assert_eq!(config.initial_tool, Tools::Brush, "last write wins");
     }
 }
+
+#[cfg(test)]
+mod readme_tests {
+    use super::*;
+
+    /// The config example in README.md must be a config the program accepts.
+    ///
+    /// Unknown keys are a hard error naming the key, so this catches a
+    /// documented option that was renamed or never existed — and it catches the
+    /// reverse drift too, where a feature ships and the example never learns
+    /// about it. Documentation falling behind the code has been this project's
+    /// most common defect by some margin.
+    #[test]
+    fn the_readme_config_example_is_one_the_loader_accepts() {
+        let readme = include_str!("../../../README.md");
+        let block = readme
+            .split("```toml")
+            .nth(1)
+            .and_then(|rest| rest.split("```").next())
+            .expect("README.md should contain a ```toml example");
+
+        let mut config = Config::default();
+        config.merge_toml(block).unwrap_or_else(|e| {
+            panic!("the README's config example is not loadable: {e}\n{block}")
+        });
+    }
+
+    /// Every `[capture]` key the program understands should appear in that
+    /// example, so the README stays a complete reference rather than a
+    /// selection someone forgot to extend.
+    #[test]
+    fn the_readme_documents_every_capture_option() {
+        let readme = include_str!("../../../README.md");
+        for key in ["mode", "delay-seconds", "snap-to-windows", "include-cursor"] {
+            assert!(
+                readme.contains(&format!("{key} =")),
+                "README.md's example config never mentions the `{key}` capture option"
+            );
+        }
+    }
+}
