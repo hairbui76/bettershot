@@ -1,0 +1,84 @@
+name: Flatpak
+
+# Build the Flatpak so the manifest stops being a guess.
+#
+# This does NOT publish anything: Flathub submission is a pull request against
+# flathub/flathub with an account this repository does not have. What it does
+# remove is the risk that the manifest is quietly wrong — a wrong runtime
+# version, a bad checksum, a missing build dependency — which is otherwise only
+# discovered by whoever first tries to ship it.
+#
+# Deliberately not part of `CI`: it downloads a ~1 GB runtime and does a full
+# offline release build inside the sandbox, so it runs only when something it
+# depends on changes, or on request.
+
+on:
+  push:
+    paths:
+      - 'packaging/flatpak/**'
+      - 'assets/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - '.github/workflows/flatpak.yml'
+  pull_request:
+    paths:
+      - 'packaging/flatpak/**'
+      - 'assets/**'
+      - 'Cargo.lock'
+      - 'Cargo.toml'
+      - '.github/workflows/flatpak.yml'
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build the Flatpak
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder python3-aiohttp python3-toml
+
+      # --user throughout: no root, and the runtime cache is a plain directory.
+      - name: Add flathub and install the runtime
+        run: |
+          flatpak remote-add --user --if-not-exists flathub \
+            https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y --noninteractive flathub \
+            org.freedesktop.Platform//24.08 \
+            org.freedesktop.Sdk//24.08 \
+            org.freedesktop.Sdk.Extension.rust-stable//24.08
+
+      # Flathub builds are offline, so every crate has to be vendored into
+      # cargo-sources.json first. The generator is maintained alongside
+      # flatpak-builder rather than vendored here.
+      - name: Vendor the crate sources
+        run: |
+          curl -fsSL -o /tmp/flatpak-cargo-generator.py \
+            https://raw.githubusercontent.com/flatpak/flatpak-builder-tools/master/cargo/flatpak-cargo-generator.py
+          python3 /tmp/flatpak-cargo-generator.py Cargo.lock \
+            -o packaging/flatpak/cargo-sources.json
+          echo "vendored $(python3 -c 'import json;print(len(json.load(open("packaging/flatpak/cargo-sources.json"))))') sources"
+
+      - name: Build
+        run: |
+          cd packaging/flatpak
+          flatpak-builder --user --force-clean --disable-rofiles-fuse \
+            --repo=repo build org.bettershot.Bettershot.yml
+
+      # A manifest can build and still install nothing useful, so check the
+      # binary and the desktop metadata actually landed in the result.
+      - name: Check what the build produced
+        run: |
+          cd packaging/flatpak
+          test -x build/files/bin/bettershot \
+            || { echo "no bettershot binary in the build result"; exit 1; }
+          test -f build/files/share/applications/org.bettershot.Bettershot.desktop \
+            || { echo "no .desktop file in the build result"; exit 1; }
+          test -f build/files/share/metainfo/org.bettershot.Bettershot.metainfo.xml \
+            || { echo "no AppStream metainfo in the build result"; exit 1; }
+          echo "--- installed tree ---"
+          find build/files -maxdepth 3 -type f | head -20

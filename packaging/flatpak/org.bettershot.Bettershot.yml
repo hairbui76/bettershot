@@ -77,5 +77,15 @@ modules:
     sources:
       - type: dir
         path: ../..
+        # `dir` copies the tree verbatim — it does not consult .gitignore — so
+        # without these it drags in a multi-gigabyte `target/` and follows the
+        # `Satty` symlink out of the repository entirely. `Satty` is a
+        # read-only upstream reference that must never be vendored; the CI job
+        # that asserts it stays untracked would not catch it being copied in
+        # here.
+        skip:
+          - target
+          - .git
+          - Satty
       # Generated; see the header.
       - cargo-sources.json
