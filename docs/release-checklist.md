@@ -18,16 +18,46 @@ below.
 
 ## Automated gates (CI does these)
 
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo clippy --workspace --all-targets -- -D warnings`
-- [ ] `cargo test --workspace`
-- [ ] `cargo clippy -p bettershot --features tray --all-targets -- -D warnings`
-- [ ] `cargo check --workspace --target x86_64-pc-windows-msvc`
-- [ ] `cargo check --target aarch64-apple-darwin` for the libraries **and** the
-      binary (`-p bettershot --no-default-features --features tray`)
-- [ ] Tests pass on `ubuntu-latest`, `windows-latest` and `macos-latest`
-- [ ] Release builds succeed on all three, with `--features tray`
+Nothing here needs a person. It is listed so that a red run is recognised as a
+release blocker rather than something to retry.
+
+`CI`, on every push:
+
+- [ ] `cargo fmt --all -- --check`, `cargo clippy --workspace --all-targets
+      -- -D warnings`, and `cargo test --workspace` on `ubuntu-latest`,
+      `windows-latest` and `macos-latest`
+- [ ] `cargo clippy -p bettershot --features tray --all-targets -- -D warnings`,
+      which is where the tray code gets compiled at all — it is behind a
+      feature because it needs GTK, libayatana-appindicator and libxdo
+- [ ] Release build on all three, with `--features tray`
+- [ ] **Clippy**, not `check`, for `x86_64-pc-windows-msvc` and for
+      `aarch64-apple-darwin` — the libraries and the binary
+      (`-p bettershot --no-default-features --features tray`). Several lints
+      only fire on code behind a platform `cfg`, so a host-only run cannot see
+      them; the first CI run failed on exactly that.
+- [ ] The unsigned MSI builds from `packaging/windows/bettershot.wxs`
 - [ ] `Satty/` is still untracked
+- [ ] The performance guards in `crates/render/tests/end_to_end.rs` pass: blur
+      and pixelate cost independent of radius/block size, export no worse than
+      linear in pixel count. They are ratios, so they hold on any machine.
+
+`Packaging` and `Flatpak`:
+
+- [ ] The AUR package builds in an Arch container and passes `namcap`
+- [ ] The winget manifest splits into three documents that validate against the
+      published schemas
+- [ ] The macOS `.app` bundle and an unsigned dmg build, with
+      `CFBundleExecutable` and `CFBundleIconFile` resolving inside the bundle
+- [ ] The Flatpak builds against the `25.08` runtime
+
+> **These two workflows are path-filtered.** They run when `packaging/`,
+> `assets/`, `Cargo.lock` or their own file changes — which a release commit
+> may well not touch. Trigger both by hand from the Actions tab
+> (`workflow_dispatch`) against the release commit before tagging, or they will
+> last have run against something older.
+
+What CI still cannot tell you is whether the program *works*: it never renders
+a frame or captures a screen. That is what the rest of this page is for.
 
 ## Per-environment manual verification
 
@@ -111,7 +141,18 @@ The macOS backend has never been executed. Before it can be called supported:
 - [ ] AppStream metainfo has a `<release>` entry for this version
 - [ ] README and docs describe what actually ships
 - [ ] `cargo dist plan` produces the expected artefacts
-- [ ] Windows MSI signed; macOS dmg notarized and stapled
+- [ ] Both path-filtered workflows re-run against the release commit (see above)
+- [ ] Windows MSI **signed** — CI builds it unsigned on every push, so this is
+      a signing step, not a build step. An unsigned MSI trips SmartScreen on
+      every install and is worse for users than shipping only the portable zip.
+- [ ] macOS dmg **notarized and stapled** — likewise: CI builds the bundle and
+      an unsigned dmg, so what is missing is a Developer ID, `notarytool
+      submit`, and `stapler staple`.
+- [ ] `packaging/aur/PKGBUILD` `sha256sums` filled in with `updpkgsums` against
+      the published tarball, and `packaging/winget/manifest.yaml`'s
+      `InstallerSha256` and `ReleaseDate` replaced from the published MSI.
+      Both are placeholders that CI cannot check, because they describe a
+      release that does not exist until this point.
 - [ ] A migration note if any config key changed meaning, and
       `CONFIG_VERSION` bumped with a migration if the schema changed
 
