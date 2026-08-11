@@ -174,6 +174,30 @@ pub(crate) fn initial_window_size([w, h]: [f32; 2]) -> [f32; 2] {
 mod tests {
     use super::*;
 
+    /// The shipped icon has to be recognisable as an image, not merely valid.
+    ///
+    /// Image loaders identify SVG by sniffing a short prefix of the file for
+    /// the magic `<svg`. A description block above the element pushes it past
+    /// that window and the file stops being loadable — while remaining
+    /// perfectly valid XML, so nothing else complains. That is exactly what
+    /// happened: a comment put `<svg` at byte 488 and appstreamcli rejected
+    /// the icon with "Unrecognized image file format" during the Flatpak
+    /// build, which was the first thing to actually try rendering it.
+    #[test]
+    fn the_application_icon_starts_early_enough_to_be_sniffed_as_an_image() {
+        let icon = concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/bettershot.svg");
+        let bytes = std::fs::read(icon).expect("the shipped icon should exist");
+        let offset = bytes
+            .windows(4)
+            .position(|w| w == b"<svg")
+            .expect("the icon should contain an <svg> element");
+        assert!(
+            offset < 256,
+            "`<svg` is at byte {offset}; loaders sniff only a short prefix, so \
+             keep the element first and put commentary inside it"
+        );
+    }
+
     #[test]
     fn a_huge_screenshot_opens_in_a_reasonably_sized_window() {
         let [w, h] = initial_window_size([3840.0, 2160.0]);
