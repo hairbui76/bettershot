@@ -28,8 +28,8 @@ use bettershot_core::Rect;
 use xcap::{Monitor as XMonitor, Window as XWindow, XCapError};
 
 use crate::{
-    Capabilities, CaptureBackend, CaptureError, CaptureTarget, MonitorId, MonitorInfo, RawFrame,
-    VirtualDesktop, WindowId, WindowInfo, stitch, target::resolve_target,
+    Capabilities, CaptureBackend, CaptureError, CaptureTarget, CursorImage, MonitorId, MonitorInfo,
+    RawFrame, VirtualDesktop, WindowId, WindowInfo, stitch, target::resolve_target,
 };
 
 /// Windows Graphics Capture backend.
@@ -213,17 +213,15 @@ impl CaptureBackend for WindowsBackend {
     }
 
     fn capabilities(&self) -> Capabilities {
-        Capabilities {
-            // `xcap` calls `SetIsCursorCaptureEnabled(false)` and exposes no way
-            // to read the cursor bitmap back, so serving `--include-cursor` here
-            // means a hand-written `GetCursorInfo` + `GetIconInfo` + `GetDIBits`
-            // path, including the monochrome-cursor case and the two `HBITMAP`s
-            // that must be freed. That is not code to write blind: claiming the
-            // capability without it would just move the failure somewhere less
-            // obvious. `crate::cursor` already has the platform-neutral half.
-            cursor: false,
-            ..Capabilities::FULL
-        }
+        Capabilities::FULL
+    }
+
+    fn cursor(&self) -> Result<Option<CursorImage>, CaptureError> {
+        // `xcap` calls `SetIsCursorCaptureEnabled(false)` and will not hand the
+        // bitmap back, so this goes to Win32 directly. Like the rest of the
+        // cursor work, only the handle management is platform-specific: the
+        // decoding lives in `crate::cursor` and is tested everywhere.
+        super::windows_cursor::current_cursor()
     }
 }
 

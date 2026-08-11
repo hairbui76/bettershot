@@ -45,7 +45,7 @@ Flags that exist in both tools keep their names and meanings.
 | `--disable-notifications` | `--disable-notifications` | Same. |
 | — | `--capture <MODE>` | New: `region`, `window`, `monitor`, `all`. |
 | — | `--delay <SECONDS>` | New: for catching menus and hover states. |
-| — | `--include-cursor` | New: X11 only for now — see ROADMAP.md. |
+| — | `--include-cursor` | New: X11 and Windows; the Wayland portal has no cursor control. |
 | — | `--no-config` | New: ignore the config file entirely. |
 
 ## Configuration file

@@ -22,6 +22,8 @@ pub(crate) mod x11;
 
 #[cfg(target_os = "windows")]
 pub(crate) mod windows;
+#[cfg(target_os = "windows")]
+pub(crate) mod windows_cursor;
 
 /// The Wayland `xdg-desktop-portal` Screenshot backend.
 pub(crate) fn new_wayland_portal() -> Result<Box<dyn CaptureBackend>, CaptureError> {

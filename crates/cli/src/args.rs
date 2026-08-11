@@ -44,8 +44,8 @@ pub struct Args {
     pub delay: Option<u64>,
 
     /// Include the mouse cursor in the capture. Supported on X11 (needs the
-    /// XFixes extension); the Wayland screenshot portal offers no cursor
-    /// control, and Windows and macOS do not read it yet.
+    /// XFixes extension) and Windows; the Wayland screenshot portal offers no
+    /// cursor control at all, and macOS does not read it yet.
     #[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
     pub include_cursor: Option<bool>,
 

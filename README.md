@@ -100,11 +100,10 @@ color-palette = ["#eb4d4b", "#6ab04c", "#22a6b3", "#f0932b", "#c825b8", "#130f40
 mode = "region"
 delay-seconds = 0
 snap-to-windows = true
-# Draw the mouse pointer into the shot. X11 only for now: the Wayland
-# screenshot portal has no cursor control at all, and the Windows and macOS
-# backends do not supply one yet. The settings window says so rather than
-# offering a checkbox that does nothing, and `--include-cursor` logs a warning
-# instead of being silently ignored.
+# Draw the mouse pointer into the shot. Works on X11 and Windows; the Wayland
+# screenshot portal has no cursor control at all, and macOS does not supply one
+# yet. The settings window says so rather than offering a checkbox that does
+# nothing, and `--include-cursor` logs a warning instead of being ignored.
 include-cursor = false
 ```
 

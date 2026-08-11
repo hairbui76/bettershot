@@ -189,11 +189,155 @@ impl CursorImage {
         Self::from_premultiplied(width, height, data, anchor)
     }
 
+    /// Build from a Win32 colour cursor: a top-down BGRA image plus the 1-bit
+    /// AND mask that accompanies it.
+    ///
+    /// Windows stores cursor colour bitmaps with **straight** alpha, so they
+    /// are premultiplied on the way in like any other straight source.
+    ///
+    /// The mask is not redundant. Plenty of cursors — including several of the
+    /// system ones — are 32 bits per pixel with the alpha channel left entirely
+    /// zero, because they predate alpha and rely on the AND mask for shape.
+    /// Trusting the alpha there yields a completely invisible cursor, so an
+    /// all-zero alpha channel falls back to the mask: a clear bit is opaque and
+    /// a set bit is transparent, which is the inverse of how it reads.
+    ///
+    /// Lives here rather than in the Windows backend so the bit-twiddling is
+    /// tested on every platform, the same split [`Self::from_argb_words`] uses.
+    pub fn from_win32_color(
+        width: u32,
+        height: u32,
+        bgra: &[u8],
+        mask: &[u8],
+        mask_stride: usize,
+        anchor: CursorAnchor,
+    ) -> Result<Self, CaptureError> {
+        check_len(width, height, bgra.len())?;
+        require_mask(width, height, mask, mask_stride, 1)?;
+
+        let opaque_alpha = bgra.chunks_exact(BYTES_PER_PIXEL).all(|px| px[3] == 0);
+        let mut data = Vec::with_capacity(bgra.len());
+        for y in 0..height {
+            for x in 0..width {
+                let i = (y as usize * width as usize + x as usize) * BYTES_PER_PIXEL;
+                let alpha = if opaque_alpha {
+                    // A set AND-mask bit means "leave the screen alone here".
+                    if mask_bit(mask, mask_stride, x, y) {
+                        0
+                    } else {
+                        255
+                    }
+                } else {
+                    bgra[i + 3]
+                };
+                data.push(bgra[i + 2]); // R (the source is B, G, R, A)
+                data.push(bgra[i + 1]); // G
+                data.push(bgra[i]); // B
+                data.push(alpha);
+            }
+        }
+        Self::from_straight(width, height, data, anchor)
+    }
+
+    /// Build from a Win32 monochrome cursor, where there is no colour bitmap at
+    /// all and the mask is **double height**: the AND mask on top, the XOR mask
+    /// below it.
+    ///
+    /// The two bits together pick one of four behaviours per pixel:
+    ///
+    /// | AND | XOR | Result |
+    /// | --- | --- | --- |
+    /// | 0 | 0 | opaque black |
+    /// | 0 | 1 | opaque white |
+    /// | 1 | 0 | transparent |
+    /// | 1 | 1 | invert whatever is underneath |
+    ///
+    /// The last one cannot be represented in a static image — it is why the
+    /// classic text I-beam stays visible over any background. It is rendered as
+    /// opaque black, which is what a screenshot of it over a light background
+    /// would have looked like, and is what other capture tools do.
+    ///
+    /// `height` is the cursor's height, not the bitmap's; the buffer must hold
+    /// `2 * height` rows.
+    pub fn from_win32_monochrome(
+        width: u32,
+        height: u32,
+        mask: &[u8],
+        mask_stride: usize,
+        anchor: CursorAnchor,
+    ) -> Result<Self, CaptureError> {
+        require_mask(width, height, mask, mask_stride, 2)?;
+
+        let mut data = Vec::with_capacity(width as usize * height as usize * BYTES_PER_PIXEL);
+        for y in 0..height {
+            for x in 0..width {
+                let and = mask_bit(mask, mask_stride, x, y);
+                let xor = mask_bit(mask, mask_stride, x, y + height);
+                let (luma, alpha) = match (and, xor) {
+                    (false, false) => (0, 255),
+                    (false, true) => (255, 255),
+                    (true, false) => (0, 0),
+                    // Inversion, approximated as black. See the table above.
+                    (true, true) => (0, 255),
+                };
+                data.extend_from_slice(&[luma, luma, luma, alpha]);
+            }
+        }
+        Self::from_straight(width, height, data, anchor)
+    }
+
     /// No pixels at all — a hidden cursor, which several platforms report as a
     /// zero-sized bitmap rather than an absence.
     pub fn is_empty(&self) -> bool {
         self.width == 0 || self.height == 0
     }
+}
+
+/// Read one pixel from a 1-bit-per-pixel Windows mask.
+///
+/// Windows packs these most-significant-bit first, with each row padded out to
+/// a 4-byte boundary — `mask_stride` is that padded row length. A set bit means
+/// "transparent" in an AND mask, which is the opposite of the intuitive reading
+/// and the reason this is a named function rather than an inline expression.
+fn mask_bit(mask: &[u8], stride: usize, x: u32, y: u32) -> bool {
+    let index = y as usize * stride + (x as usize / 8);
+    match mask.get(index) {
+        // Out of range is treated as transparent rather than panicking: a short
+        // mask is already rejected by `require_mask`, and a cursor is never
+        // worth taking the process down for.
+        None => true,
+        Some(byte) => byte & (0x80 >> (x % 8)) != 0,
+    }
+}
+
+/// Check a 1bpp mask covers `rows_per_cursor * height` padded rows.
+fn require_mask(
+    width: u32,
+    height: u32,
+    mask: &[u8],
+    stride: usize,
+    rows_per_cursor: u32,
+) -> Result<(), CaptureError> {
+    if width == 0 || height == 0 {
+        return Err(CaptureError::EmptyRegion);
+    }
+    let minimum = (width as usize).div_ceil(8);
+    if stride < minimum {
+        return Err(CaptureError::invalid_frame(format!(
+            "a {width}px mask row needs at least {minimum} bytes, got a stride of {stride}"
+        )));
+    }
+    let rows = (height as usize) * (rows_per_cursor as usize);
+    let needed = stride
+        .checked_mul(rows)
+        .ok_or_else(|| CaptureError::invalid_frame("cursor mask does not fit in memory"))?;
+    if mask.len() < needed {
+        return Err(CaptureError::invalid_frame(format!(
+            "cursor mask is {} bytes, expected {needed} for {rows} rows of {stride}",
+            mask.len()
+        )));
+    }
+    Ok(())
 }
 
 fn check_len(width: u32, height: u32, len: usize) -> Result<(), CaptureError> {
@@ -656,6 +800,153 @@ mod tests {
         // rest are far outside. What matters is that none of them panicked.
         assert_eq!(frame.pixel(3, 3), Some([0, 0, 0, 255]));
         let _ = before;
+    }
+
+    /// Pack `bits` (row-major booleans) into a 1bpp Windows mask, MSB first,
+    /// rows padded to 4 bytes.
+    fn pack_mask(width: u32, rows: &[Vec<bool>]) -> (Vec<u8>, usize) {
+        let stride = ((width as usize).div_ceil(8)).div_ceil(4) * 4;
+        let mut out = vec![0u8; stride * rows.len()];
+        for (y, row) in rows.iter().enumerate() {
+            for (x, &set) in row.iter().enumerate() {
+                if set {
+                    out[y * stride + x / 8] |= 0x80 >> (x % 8);
+                }
+            }
+        }
+        (out, stride)
+    }
+
+    #[test]
+    fn a_win32_colour_cursor_uses_its_alpha_channel() {
+        // Two BGRA pixels: opaque red, then half-transparent blue.
+        let bgra = vec![0, 0, 255, 255, 255, 0, 0, 128];
+        let (mask, stride) = pack_mask(2, &[vec![false, false]]);
+        let cursor = CursorImage::from_win32_color(
+            2,
+            1,
+            &bgra,
+            &mask,
+            stride,
+            CursorAnchor::TopLeft(Vec2D::ZERO),
+        )
+        .unwrap();
+        // Stored premultiplied: opaque red survives, the blue is halved.
+        assert_eq!(&cursor.data[..4], &[255, 0, 0, 255]);
+        assert_eq!(cursor.data[7], 128, "alpha is preserved");
+        assert!(cursor.data[6] < 130, "blue should be premultiplied down");
+    }
+
+    #[test]
+    fn a_colour_cursor_with_no_alpha_falls_back_to_the_and_mask() {
+        // Several system cursors are 32bpp with the alpha channel left zero.
+        // Believing that alpha gives a completely invisible pointer.
+        let bgra = vec![0, 0, 255, 0, 0, 255, 0, 0];
+        // Left pixel opaque (clear bit), right pixel transparent (set bit).
+        let (mask, stride) = pack_mask(2, &[vec![false, true]]);
+        let cursor = CursorImage::from_win32_color(
+            2,
+            1,
+            &bgra,
+            &mask,
+            stride,
+            CursorAnchor::TopLeft(Vec2D::ZERO),
+        )
+        .unwrap();
+        assert_eq!(&cursor.data[..4], &[255, 0, 0, 255], "left is opaque red");
+        assert_eq!(&cursor.data[4..], &[0, 0, 0, 0], "right is transparent");
+    }
+
+    #[test]
+    fn a_monochrome_cursor_decodes_all_four_and_xor_combinations() {
+        // One row of four pixels covering every case in the table:
+        // (0,0) black, (0,1) white, (1,0) transparent, (1,1) invert.
+        let and = vec![false, false, true, true];
+        let xor = vec![false, true, false, true];
+        let (mask, stride) = pack_mask(4, &[and, xor]);
+        let cursor = CursorImage::from_win32_monochrome(
+            4,
+            1,
+            &mask,
+            stride,
+            CursorAnchor::TopLeft(Vec2D::ZERO),
+        )
+        .unwrap();
+        assert_eq!(&cursor.data[0..4], &[0, 0, 0, 255], "opaque black");
+        assert_eq!(&cursor.data[4..8], &[255, 255, 255, 255], "opaque white");
+        assert_eq!(&cursor.data[8..12], &[0, 0, 0, 0], "transparent");
+        // Inversion cannot be represented statically; rendered as black.
+        assert_eq!(&cursor.data[12..16], &[0, 0, 0, 255], "invert -> black");
+    }
+
+    #[test]
+    fn mask_rows_are_read_at_their_padded_stride() {
+        // A 1px-wide cursor still has a 4-byte mask row. Reading it as one byte
+        // per row would take the second row's bit from the first row's padding.
+        let (mask, stride) = pack_mask(1, &[vec![false], vec![true]]);
+        assert_eq!(stride, 4);
+        let cursor = CursorImage::from_win32_monochrome(
+            1,
+            1,
+            &mask,
+            stride,
+            CursorAnchor::TopLeft(Vec2D::ZERO),
+        )
+        .unwrap();
+        // AND=0, XOR=1 is opaque white.
+        assert_eq!(cursor.data, vec![255, 255, 255, 255]);
+    }
+
+    #[test]
+    fn mask_bits_are_read_most_significant_first() {
+        // Windows packs the leftmost pixel into the *high* bit. Reading LSB
+        // first mirrors every cursor horizontally within each 8px group.
+        let (mask, stride) = pack_mask(8, &[(0..8).map(|i| i == 0).collect()]);
+        assert_eq!(mask[0], 0x80, "pixel 0 belongs in the high bit");
+        assert!(mask_bit(&mask, stride, 0, 0));
+        assert!(!mask_bit(&mask, stride, 1, 0));
+    }
+
+    #[test]
+    fn a_truncated_win32_mask_is_an_error_not_a_panic() {
+        let bgra = vec![0; 4 * 4];
+        assert!(
+            CursorImage::from_win32_color(
+                4,
+                1,
+                &bgra,
+                &[0; 1],
+                4,
+                CursorAnchor::TopLeft(Vec2D::ZERO)
+            )
+            .is_err()
+        );
+        // Monochrome needs two rows' worth, so one row is short.
+        assert!(
+            CursorImage::from_win32_monochrome(
+                4,
+                1,
+                &[0; 4],
+                4,
+                CursorAnchor::TopLeft(Vec2D::ZERO)
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn a_win32_mask_stride_narrower_than_the_cursor_is_rejected() {
+        assert!(
+            CursorImage::from_win32_monochrome(
+                64,
+                1,
+                &[0; 64],
+                4,
+                CursorAnchor::TopLeft(Vec2D::ZERO)
+            )
+            .is_err(),
+            "a 64px row needs 8 bytes, not 4"
+        );
     }
 
     #[test]

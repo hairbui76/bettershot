@@ -30,6 +30,13 @@ image.workspace = true
 # bindings, no vendored C).
 [target.'cfg(target_os = "windows")'.dependencies]
 xcap = "0.9"
+# For the cursor only. `xcap` disables cursor capture and exposes no way to read
+# the bitmap back, so `--include-cursor` needs the Win32 calls directly.
+windows-sys = { version = "0.60", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 # macOS. The `objc2-*` framework bindings are pure Rust (no vendored C, no Apple
 # SDK needed to *check* them), so `cargo check --target aarch64-apple-darwin`

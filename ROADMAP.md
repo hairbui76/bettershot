@@ -11,7 +11,7 @@
 
 | Job | Result |
 | --- | --- |
-| Test (ubuntu-latest) | 757 tests |
+| Test (ubuntu-latest) | 764 tests |
 | Test (windows-latest) | 716 tests |
 | Test (macos-latest) | 717 tests |
 | Cross-compile check | clippy clean for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
@@ -358,9 +358,15 @@ listed here rather than left to be discovered:
   - **X11** — done, via XFixes `GetCursorImage`.
   - **Wayland portal** — not possible: the Screenshot portal has no cursor
     option at all. `ScreenCast` does, which is a different and much larger API.
-  - **Windows** — `xcap` disables cursor capture and will not hand the bitmap
-    back, so this needs a hand-written `GetCursorInfo`/`GetIconInfo`/`GetDIBits`
-    path including the monochrome-cursor case. Not written blind.
+  - **Windows** — done, via `GetCursorInfo`/`GetIconInfo`/`GetDIBits`, since
+    `xcap` disables cursor capture and will not hand the bitmap back.
+    **Compile-verified for `x86_64-pc-windows-msvc` and linked by the Windows
+    release build, but never run** — the same standard the ScreenCaptureKit
+    backend ships under. The decoding (the AND/XOR mask table, the zero-alpha
+    fallback that keeps the I-beam visible, MSB-first bit order, padded stride)
+    is in `capture::cursor` and unit-tested everywhere; only handle management
+    is Windows-only, and the handles are RAII-guarded so a GDI leak is
+    structurally impossible rather than a thing to remember.
   - **macOS** — belongs with Phase 5; `SCStreamConfiguration.showsCursor` does
     it in one line once there is a Mac to verify on.
 
