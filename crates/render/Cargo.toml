@@ -1,0 +1,17 @@
+[package]
+name = "bettershot-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+description = "bettershot render"
+homepage.workspace = true
+repository.workspace = true
+license.workspace = true
+
+[dependencies]
+bettershot-core.workspace = true
+image.workspace = true
+thiserror.workspace = true
+log.workspace = true
+ab_glyph = "0.2"
