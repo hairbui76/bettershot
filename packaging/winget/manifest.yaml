@@ -68,6 +68,9 @@ ReleaseDate: "REPLACE-AT-RELEASE"  # ISO 8601, e.g. 2026-08-11
 Installers:
   - Architecture: x64
     InstallerUrl: https://github.com/bettershot/bettershot/releases/download/v0.1.0/bettershot-0.1.0-x64.msi
-    InstallerSha256: 0000000000000000000000000000000000000000000000000000000000000000
+    # Quoted deliberately: YAML reads a bare run of zeroes as the integer 0,
+    # and winget requires a 64-character hex *string*, so an unquoted
+    # placeholder is rejected by the schema.
+    InstallerSha256: "0000000000000000000000000000000000000000000000000000000000000000"
 ManifestType: installer
 ManifestVersion: 1.6.0

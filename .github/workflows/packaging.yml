@@ -1,0 +1,170 @@
+name: Packaging
+
+# Build and check the packaging that CI otherwise never touches.
+#
+# None of these jobs publish anything. Publishing needs accounts and signing
+# keys this repository does not hold. What they remove is the *other* half of
+# the risk: that a manifest nobody has ever run is quietly wrong, and the first
+# person to find out is whoever is trying to cut a release.
+#
+# The Windows MSI is built in `CI` instead, because it needs the same release
+# binary that job already produces. The Flatpak has its own workflow because it
+# pulls a ~1 GB runtime.
+
+on:
+  push:
+    paths:
+      - 'packaging/**'
+      - 'assets/**'
+      - 'Cargo.lock'
+      - '.github/workflows/packaging.yml'
+  pull_request:
+    paths:
+      - 'packaging/**'
+      - 'assets/**'
+      - 'Cargo.lock'
+      - '.github/workflows/packaging.yml'
+  workflow_dispatch:
+
+jobs:
+  # Arch's makepkg only runs on Arch, which is what a container is for. The
+  # PKGBUILD is used verbatim: its source is `NAME::URL`, and makepkg skips the
+  # download when a file of that name is already present, so dropping a tarball
+  # of the current tree beside it exercises prepare/build/check/package without
+  # needing a published tag.
+  #
+  # What this does NOT check is the source URL and its checksum, which cannot
+  # exist before there is a release to point at.
+  aur:
+    name: AUR package builds
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - name: Install the toolchain
+        run: |
+          pacman -Syu --noconfirm --needed git rust namcap sudo
+
+      - uses: actions/checkout@v5
+
+      # makepkg refuses to run as root, on purpose.
+      - name: Prepare an unprivileged builder
+        run: |
+          useradd -m builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Stage a tarball of this tree as the source
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          version=$(grep -m1 '^pkgver=' packaging/aur/PKGBUILD | cut -d= -f2)
+          echo "building bettershot-$version from the working tree"
+          git archive --format=tar.gz \
+            --prefix="bettershot-$version/" \
+            -o "packaging/aur/bettershot-$version.tar.gz" HEAD
+          chown builder:builder "packaging/aur/bettershot-$version.tar.gz"
+
+      - name: makepkg
+        run: |
+          cd packaging/aur
+          sudo -u builder makepkg --syncdeps --noconfirm --cleanbuild
+
+      - name: Lint with namcap
+        run: |
+          cd packaging/aur
+          echo "--- PKGBUILD ---"
+          namcap PKGBUILD || true
+          echo "--- built package ---"
+          for p in *.pkg.tar.zst; do namcap "$p" || true; done
+
+      # A package can build and still install nothing useful.
+      - name: Check the package contents
+        run: |
+          cd packaging/aur
+          pkg=$(ls *.pkg.tar.zst | head -1)
+          echo "inspecting $pkg"
+          tar --use-compress-program=unzstd -tf "$pkg" | grep -v '^\.' | sort
+          for f in usr/bin/bettershot \
+                   usr/share/applications/org.bettershot.Bettershot.desktop \
+                   usr/share/metainfo/org.bettershot.Bettershot.metainfo.xml \
+                   usr/share/icons/hicolor/scalable/apps/org.bettershot.Bettershot.svg \
+                   usr/share/licenses/bettershot/LICENSE; do
+            tar --use-compress-program=unzstd -tf "$pkg" | grep -qx "$f" \
+              || { echo "MISSING from the package: $f"; exit 1; }
+          done
+
+  # The winget manifest is three documents in one file for review, and has to
+  # be split before submission. Checking the split against the published
+  # schemas catches the structural mistakes (wrong key, bad enum, missing
+  # required field) without needing winget itself, which is not present on the
+  # Windows Server images.
+  winget:
+    name: winget manifest is valid
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - run: pip install --quiet pyyaml jsonschema
+
+      - name: Split and validate
+        run: python3 packaging/winget/validate.py
+
+  # Assembles the .app bundle and an unsigned dmg. Neither is publishable —
+  # Homebrew will not take an unnotarized cask and Gatekeeper would refuse to
+  # run it — but it proves the Info.plist is well formed and the bundle layout
+  # is right, which is otherwise only discovered with a Developer ID in hand.
+  macos-bundle:
+    name: macOS bundle and dmg
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release -p bettershot
+
+      - name: Assemble the bundle
+        run: |
+          set -euo pipefail
+          app="build/bettershot.app"
+          mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+          cp packaging/macos/Info.plist "$app/Contents/"
+          cp target/release/bettershot "$app/Contents/MacOS/bettershot"
+          # CFBundleIconFile names bettershot.icns; the repository has an SVG,
+          # so convert rather than ship a bundle whose icon key dangles.
+          mkdir -p /tmp/bettershot.iconset
+          for size in 16 32 64 128 256 512; do
+            sips -s format png --resampleHeightWidth $size $size \
+              assets/bettershot.svg --out "/tmp/bettershot.iconset/icon_${size}x${size}.png" \
+              >/dev/null
+          done
+          iconutil -c icns /tmp/bettershot.iconset \
+            -o "$app/Contents/Resources/bettershot.icns"
+          plutil -lint "$app/Contents/Info.plist"
+
+      - name: Check the bundle
+        run: |
+          set -euo pipefail
+          app="build/bettershot.app"
+          exe=$(plutil -extract CFBundleExecutable raw "$app/Contents/Info.plist")
+          test -x "$app/Contents/MacOS/$exe" \
+            || { echo "CFBundleExecutable '$exe' is not in the bundle"; exit 1; }
+          icon=$(plutil -extract CFBundleIconFile raw "$app/Contents/Info.plist")
+          test -f "$app/Contents/Resources/$icon" \
+            || { echo "CFBundleIconFile '$icon' is not in the bundle"; exit 1; }
+          echo "--- bundle ---"
+          find "$app" -type f
+
+      - name: Build an unsigned dmg
+        run: |
+          hdiutil create -volname bettershot -srcfolder build/bettershot.app \
+            -ov -format UDZO build/bettershot-0.1.0-unsigned.dmg
+          hdiutil verify build/bettershot-0.1.0-unsigned.dmg
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: bettershot-macos-dmg-unsigned
+          path: build/bettershot-0.1.0-unsigned.dmg
+          if-no-files-found: error
