@@ -142,3 +142,47 @@ jobs:
             target/release/bettershot
             target/release/bettershot.exe
           if-no-files-found: error
+
+  # Prove the WiX definition actually produces an installer.
+  #
+  # This does NOT sign it, and an unsigned MSI must never be published: it
+  # trips SmartScreen on every install, which is worse for users than offering
+  # only the portable zip. Signing needs an Authenticode certificate this
+  # repository does not hold. What this job removes is the *other* risk — that
+  # the .wxs is subtly wrong and nobody finds out until release day, with a
+  # certificate in hand and a tag already pushed.
+  msi:
+    name: MSI builds (unsigned)
+    needs: test
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build the binary the installer packages
+        run: cargo build --release -p bettershot --features tray
+
+      # WiX v4 ships as a dotnet global tool; dotnet is preinstalled here.
+      - name: Install WiX
+        run: dotnet tool install --global wix --version 4.*
+
+      - name: Build the MSI
+        shell: pwsh
+        run: |
+          wix build packaging/windows/bettershot.wxs `
+            -arch x64 `
+            -d Version=0.1.0 `
+            -d BinDir=target/release `
+            -o bettershot-0.1.0-x64.msi
+          if (-not (Test-Path bettershot-0.1.0-x64.msi)) {
+            throw "wix reported success but produced no MSI"
+          }
+          Get-Item bettershot-0.1.0-x64.msi |
+            Select-Object Name, @{n = 'KB'; e = { [int]($_.Length / 1KB) } }
+
+      - uses: actions/upload-artifact@v5
+        with:
+          name: bettershot-msi-unsigned
+          path: bettershot-0.1.0-x64.msi
+          if-no-files-found: error
