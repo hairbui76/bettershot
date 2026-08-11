@@ -11,7 +11,7 @@
 
 | Job | Result |
 | --- | --- |
-| Test (ubuntu-latest) | 744 tests |
+| Test (ubuntu-latest) | 755 tests |
 | Test (windows-latest) | 716 tests |
 | Test (macos-latest) | 717 tests |
 | Cross-compile check | clippy clean for `x86_64-pc-windows-msvc` and `aarch64-apple-darwin` |
@@ -368,14 +368,14 @@ listed here rather than left to be discovered:
   says when it is unavailable, and the CLI logs a warning rather than silently
   ignoring the flag.
 
-- **macOS frames are premultiplied where the rest of the pipeline is not** —
-  `RawFrame` and the render canvas are straight-alpha (PNG round-trips have to
-  stay bit-exact), but the ScreenCaptureKit backend passes premultiplied BGRA
-  through unchanged, so a translucent pixel would have its alpha applied twice.
-  Invisible on a normal opaque screenshot, where the two are the same bytes;
-  visible on window captures with translucent edges. The fix is an
-  un-premultiply pass in `bgra_rows_to_rgba`, held for Phase 5 because it needs
-  a Mac to verify rather than a guess.
+That is the whole list. macOS frames used to be here too: the ScreenCaptureKit
+backend passed premultiplied BGRA into a straight-alpha pipeline, so translucent
+pixels had their alpha applied twice. I had deferred that as needing a Mac,
+which was only half right — the conversion is pure arithmetic and is now done
+and exhaustively tested, driven by the image's `CGImageAlphaInfo` so that a
+straight-alpha image is not divided a second time and a padding byte is never
+divided by at all. Confirming the *premise* — that ScreenCaptureKit really
+delivers premultiplied pixels, which Apple documents — still wants a Mac.
 That is the whole list. `--output-filename -` used to be here too; it now
 writes the encoded image to stdout, with a regression test that asserts no file
 named `-` is created.

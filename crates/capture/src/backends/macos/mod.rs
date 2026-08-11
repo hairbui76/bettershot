@@ -432,6 +432,22 @@ pub(crate) fn force_opaque_for(alpha_info: u32) -> bool {
     matches!(alpha_info, 0 | 5 | 6)
 }
 
+/// Whether a `CGImage`'s colour channels have been scaled by its alpha.
+///
+/// `kCGImageAlphaPremultipliedLast` (1) and `kCGImageAlphaPremultipliedFirst`
+/// (2) say yes; ScreenCaptureKit's SDR output is the latter.
+/// `kCGImageAlphaLast` (3) and `kCGImageAlphaFirst` (4) carry a real alpha that
+/// has *not* been multiplied in, and the padding layouts have no alpha at all.
+///
+/// The distinction decides whether the pixels need un-premultiplying on the way
+/// into a [`crate::RawFrame`], which is straight-alpha. Getting it backwards is
+/// not a crash: a premultiplied image left alone comes out too dark, and a
+/// straight image divided anyway comes out too bright, both only at the
+/// translucent edges nobody looks at closely.
+pub(crate) fn is_premultiplied(alpha_info: u32) -> bool {
+    matches!(alpha_info, 1 | 2)
+}
+
 /// Unpack a `CGImage`'s BGRA8 pixels into the tightly packed RGBA8 a
 /// [`crate::RawFrame`] wants.
 ///
@@ -445,23 +461,24 @@ pub(crate) fn force_opaque_for(alpha_info: u32) -> bool {
 /// the caller runs against `CGImageGetBitsPerPixel` and
 /// `CGImageGetByteOrderInfo` before any of these bytes are touched.
 ///
-/// ScreenCaptureKit's SDR output is BGRA with *premultiplied* alpha, and this
-/// function currently passes that through unchanged.
+/// ScreenCaptureKit's SDR output is BGRA with *premultiplied* alpha, so this
+/// converts it to the straight alpha [`crate::RawFrame`] and the render canvas
+/// both use. Without that pass a translucent pixel has its alpha applied twice
+/// downstream and comes out too dark — invisible on a full-screen capture,
+/// where everything is opaque and the two representations are identical bytes,
+/// and visible on the translucent edges of a window capture.
 ///
-/// **That is a known deviation, not a decision.** [`crate::RawFrame`] is
-/// straight-alpha, as is `bettershot_render`'s canvas, so a translucent pixel
-/// from here has its alpha applied twice downstream. It survives only because
-/// a full-screen capture is opaque, where straight and premultiplied are the
-/// same bytes; window captures with translucent edges are the case that would
-/// show it. The fix is an un-premultiply pass, which belongs with the rest of
-/// the Phase 5 macOS work — it needs a Mac to verify against, and a wrong
-/// conversion is worse than the current honest note. See ROADMAP.md.
+/// The conversion itself is [`pixels::unpremultiply_rgba`], which is pure
+/// arithmetic and exhaustively tested on every platform. What still wants a
+/// Mac is confirming the premise — that ScreenCaptureKit really does deliver
+/// premultiplied pixels here, which Apple documents but nobody has observed on
+/// this project.
 pub(crate) fn bgra_rows_to_rgba(
     data: &[u8],
     width: u32,
     height: u32,
     bytes_per_row: usize,
-    force_opaque: bool,
+    alpha_info: u32,
 ) -> Result<Vec<u8>, CaptureError> {
     let row_bytes = (width as usize)
         .checked_mul(BYTES_PER_PIXEL)
@@ -494,7 +511,21 @@ pub(crate) fn bgra_rows_to_rgba(
         let start = y * bytes_per_row;
         out.extend_from_slice(&data[start..start + row_bytes]);
     }
-    pixels::bgra_to_rgba(&mut out, force_opaque)?;
+    // Order matters. Swap to RGBA keeping whatever alpha arrived, undo the
+    // premultiplication *using* that alpha, and only then force opacity.
+    // Forcing alpha to 255 first would strand colour that had been scaled by a
+    // smaller alpha, leaving those pixels permanently dark.
+    pixels::bgra_to_rgba(&mut out, false)?;
+    if is_premultiplied(alpha_info) {
+        pixels::unpremultiply_rgba(&mut out)?;
+    }
+    if force_opaque_for(alpha_info) {
+        // The fourth byte is padding with undefined contents, so it is not an
+        // alpha to divide by and not one to keep.
+        for px in out.chunks_exact_mut(BYTES_PER_PIXEL) {
+            px[3] = 255;
+        }
+    }
     Ok(out)
 }
 
@@ -956,11 +987,17 @@ mod tests {
         data
     }
 
+    // `CGImageAlphaInfo` values, spelled out because the tests below care
+    // about the difference between them.
+    const PREMULTIPLIED_FIRST: u32 = 2; // what ScreenCaptureKit returns
+    const STRAIGHT_FIRST: u32 = 4; // a real alpha, not multiplied in
+    const SKIP_FIRST: u32 = 6; // the fourth byte is padding
+
     #[test]
     fn row_padding_is_skipped_and_channels_are_swapped() {
         // 3 pixels = 12 bytes of content, padded out to a 16-byte stride.
         let data = padded(3, 2, 16);
-        let rgba = bgra_rows_to_rgba(&data, 3, 2, 16, false).unwrap();
+        let rgba = bgra_rows_to_rgba(&data, 3, 2, 16, STRAIGHT_FIRST).unwrap();
         assert_eq!(rgba.len(), 3 * 2 * 4);
         // Row 0, pixel 0: BGRA 10 20 30 80 -> RGBA 30 20 10 80.
         assert_eq!(&rgba[0..4], &[0x30, 0x20, 0x10, 0x80]);
@@ -975,7 +1012,7 @@ mod tests {
     #[test]
     fn a_tightly_packed_image_needs_no_special_case() {
         let data = padded(4, 3, 16);
-        let rgba = bgra_rows_to_rgba(&data, 4, 3, 16, false).unwrap();
+        let rgba = bgra_rows_to_rgba(&data, 4, 3, 16, STRAIGHT_FIRST).unwrap();
         assert_eq!(rgba.len(), 4 * 3 * 4);
         assert_eq!(&rgba[0..4], &[0x30, 0x20, 0x10, 0x80]);
     }
@@ -986,7 +1023,7 @@ mod tests {
         let width = 3024;
         let stride = 12160;
         let data = vec![7u8; stride * 2];
-        let rgba = bgra_rows_to_rgba(&data, width, 2, stride, true).unwrap();
+        let rgba = bgra_rows_to_rgba(&data, width, 2, stride, SKIP_FIRST).unwrap();
         assert_eq!(rgba.len() as usize, width as usize * 2 * 4);
         // Every pixel is 07 07 07 with alpha forced opaque.
         assert_eq!(&rgba[0..4], &[7, 7, 7, 255]);
@@ -997,25 +1034,88 @@ mod tests {
         let mut data = padded(2, 1, 8);
         data[3] = 0x00;
         data[7] = 0x00;
-        let rgba = bgra_rows_to_rgba(&data, 2, 1, 8, true).unwrap();
+        let rgba = bgra_rows_to_rgba(&data, 2, 1, 8, SKIP_FIRST).unwrap();
         assert_eq!(rgba, vec![0x30, 0x20, 0x10, 255, 0x30, 0x20, 0x11, 255]);
     }
 
     #[test]
     fn a_meaningful_alpha_channel_survives() {
         let data = padded(1, 1, 4);
-        let rgba = bgra_rows_to_rgba(&data, 1, 1, 4, false).unwrap();
+        let rgba = bgra_rows_to_rgba(&data, 1, 1, 4, STRAIGHT_FIRST).unwrap();
         assert_eq!(rgba, vec![0x30, 0x20, 0x10, 0x80]);
+    }
+
+    #[test]
+    fn premultiplied_pixels_are_converted_to_straight_alpha() {
+        // ScreenCaptureKit's layout. BGRA 40 40 40 80 is premultiplied grey at
+        // 50% alpha; straight, those channels are twice as bright.
+        let data = vec![0x40, 0x40, 0x40, 0x80];
+        let rgba = bgra_rows_to_rgba(&data, 1, 1, 4, PREMULTIPLIED_FIRST).unwrap();
+        assert_eq!(rgba[3], 0x80, "the alpha itself is unchanged");
+        for channel in &rgba[..3] {
+            assert!(
+                (0x7e..=0x82).contains(channel),
+                "expected about 0x80 after dividing 0x40 by 50% alpha, got {rgba:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_straight_alpha_image_is_not_divided_a_second_time() {
+        // The failure this guards is silent: dividing an already-straight image
+        // brightens its translucent edges instead of darkening them, and every
+        // opaque pixel looks identical either way.
+        let data = vec![0x40, 0x40, 0x40, 0x80];
+        let rgba = bgra_rows_to_rgba(&data, 1, 1, 4, STRAIGHT_FIRST).unwrap();
+        assert_eq!(rgba, vec![0x40, 0x40, 0x40, 0x80]);
+    }
+
+    #[test]
+    fn padding_alpha_is_never_divided_by() {
+        // Alpha 0x00 here is undefined padding, not transparency. Treating it
+        // as an alpha would either zero the pixel or divide by zero.
+        let data = vec![0x40, 0x40, 0x40, 0x00];
+        let rgba = bgra_rows_to_rgba(&data, 1, 1, 4, SKIP_FIRST).unwrap();
+        assert_eq!(rgba, vec![0x40, 0x40, 0x40, 255]);
+    }
+
+    #[test]
+    fn an_opaque_premultiplied_image_is_byte_for_byte_unchanged() {
+        // The overwhelmingly common case: a full-screen capture is opaque, and
+        // premultiplied and straight are the same bytes there. This is what
+        // makes the conversion safe to apply unconditionally to SCK output.
+        let data = vec![0x10, 0x20, 0x30, 0xff, 0x40, 0x50, 0x60, 0xff];
+        let rgba = bgra_rows_to_rgba(&data, 2, 1, 8, PREMULTIPLIED_FIRST).unwrap();
+        assert_eq!(rgba, vec![0x30, 0x20, 0x10, 0xff, 0x60, 0x50, 0x40, 0xff]);
+    }
+
+    #[test]
+    fn the_alpha_kinds_are_classified_the_way_coregraphics_defines_them() {
+        // 0 None, 5 NoneSkipLast, 6 NoneSkipFirst carry no alpha.
+        for padding in [0, 5, 6] {
+            assert!(force_opaque_for(padding), "alpha info {padding}");
+            assert!(!is_premultiplied(padding), "alpha info {padding}");
+        }
+        // 1 PremultipliedLast, 2 PremultipliedFirst.
+        for premultiplied in [1, 2] {
+            assert!(is_premultiplied(premultiplied), "alpha {premultiplied}");
+            assert!(!force_opaque_for(premultiplied), "alpha {premultiplied}");
+        }
+        // 3 Last, 4 First: a real alpha that was not multiplied in.
+        for straight in [3, 4] {
+            assert!(!is_premultiplied(straight), "alpha info {straight}");
+            assert!(!force_opaque_for(straight), "alpha info {straight}");
+        }
     }
 
     #[test]
     fn only_the_last_row_may_be_short() {
         // Exactly enough bytes for two full rows minus the trailing padding.
         let data = vec![0u8; 16 + 12];
-        assert!(bgra_rows_to_rgba(&data, 3, 2, 16, true).is_ok());
+        assert!(bgra_rows_to_rgba(&data, 3, 2, 16, SKIP_FIRST).is_ok());
         let short = vec![0u8; 16 + 11];
         assert!(matches!(
-            bgra_rows_to_rgba(&short, 3, 2, 16, true),
+            bgra_rows_to_rgba(&short, 3, 2, 16, SKIP_FIRST),
             Err(CaptureError::InvalidFrame(_))
         ));
     }
@@ -1023,7 +1123,7 @@ mod tests {
     #[test]
     fn an_impossible_stride_is_rejected_rather_than_read_out_of_bounds() {
         let data = vec![0u8; 64];
-        let err = bgra_rows_to_rgba(&data, 4, 2, 8, true).unwrap_err();
+        let err = bgra_rows_to_rgba(&data, 4, 2, 8, SKIP_FIRST).unwrap_err();
         assert!(matches!(err, CaptureError::InvalidFrame(_)));
         assert!(err.to_string().contains("bytes per row"), "{err}");
     }
@@ -1031,11 +1131,11 @@ mod tests {
     #[test]
     fn a_zero_sized_image_is_an_empty_region() {
         assert!(matches!(
-            bgra_rows_to_rgba(&[], 0, 4, 0, true),
+            bgra_rows_to_rgba(&[], 0, 4, 0, SKIP_FIRST),
             Err(CaptureError::EmptyRegion)
         ));
         assert!(matches!(
-            bgra_rows_to_rgba(&[], 4, 0, 16, true),
+            bgra_rows_to_rgba(&[], 4, 0, 16, SKIP_FIRST),
             Err(CaptureError::EmptyRegion)
         ));
     }

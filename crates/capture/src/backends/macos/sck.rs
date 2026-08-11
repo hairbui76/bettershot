@@ -86,8 +86,8 @@ use objc2_screen_capture_kit::{
 
 use super::{
     DisplayScale, MIN_SCREEN_CAPTURE_KIT, NAME, WindowRecord, bgra_rows_to_rgba, capabilities_for,
-    display_name, ensure_bgra8, ensure_capture_supported, force_opaque_for, monitor_from_display,
-    monitors_covering, permission_denied, stale_permission, stream_pixel_size, timed_out, too_old,
+    display_name, ensure_bgra8, ensure_capture_supported, monitor_from_display, monitors_covering,
+    permission_denied, stale_permission, stream_pixel_size, timed_out, too_old,
     window_points_to_physical, windows_front_to_back,
 };
 use crate::{
@@ -574,8 +574,16 @@ fn decode_image(image: &CGImage) -> Result<CapturedImage, CaptureError> {
     // guarantees the buffer is `length` readable bytes.
     let bytes = unsafe { std::slice::from_raw_parts(ptr, length) };
 
-    let force_opaque = force_opaque_for(CGImage::alpha_info(image).0);
-    let rgba = bgra_rows_to_rgba(bytes, width, height, bytes_per_row, force_opaque)?;
+    // The alpha info decides two separate things — whether the fourth byte is
+    // real, and whether the colours were scaled by it — so it is passed through
+    // rather than collapsed into one flag here.
+    let rgba = bgra_rows_to_rgba(
+        bytes,
+        width,
+        height,
+        bytes_per_row,
+        CGImage::alpha_info(image).0,
+    )?;
     Ok(CapturedImage {
         width,
         height,

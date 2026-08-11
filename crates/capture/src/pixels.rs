@@ -169,6 +169,52 @@ pub fn bgra_to_rgba(data: &mut [u8], force_opaque: bool) -> Result<(), CaptureEr
     Ok(())
 }
 
+/// Convert premultiplied RGBA8 to straight (non-premultiplied) alpha, in place.
+///
+/// [`crate::RawFrame`] is straight-alpha, as documented on the type, because
+/// PNG is and the render canvas is. Some platforms hand over premultiplied
+/// pixels — macOS's ScreenCaptureKit returns premultiplied BGRA — and passing
+/// those through unchanged makes every consumer apply alpha a second time.
+///
+/// Invisible on a normal screenshot, where every pixel is opaque and the two
+/// representations are identical bytes; it shows on the translucent edges of a
+/// window capture, which come out too dark.
+///
+/// The conversion is lossy in the direction it has to be: a pixel with a low
+/// alpha carries little colour information, and dividing it back out cannot
+/// invent precision that premultiplying discarded. Fully transparent pixels
+/// have no colour to recover at all and are zeroed.
+pub fn unpremultiply_rgba(data: &mut [u8]) -> Result<(), CaptureError> {
+    if data.len() % 4 != 0 {
+        return Err(CaptureError::invalid_frame(format!(
+            "RGBA buffer length {} is not a multiple of 4",
+            data.len()
+        )));
+    }
+    for px in data.chunks_exact_mut(4) {
+        let alpha = u32::from(px[3]);
+        // Opaque is the overwhelmingly common case and is exactly identity, so
+        // a whole-screen capture pays almost nothing for this pass.
+        if alpha == 255 {
+            continue;
+        }
+        if alpha == 0 {
+            px[0] = 0;
+            px[1] = 0;
+            px[2] = 0;
+            continue;
+        }
+        for channel in &mut px[..3] {
+            // `min(alpha)` upholds the premultiplied invariant `c <= a`. A
+            // source that violates it would otherwise divide out to more than
+            // 255 and wrap.
+            let value = u32::from(*channel).min(alpha);
+            *channel = ((value * 255 + alpha / 2) / alpha) as u8;
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -285,6 +331,70 @@ mod tests {
         let mut data = vec![0u8; 6];
         assert!(matches!(
             bgra_to_rgba(&mut data, true),
+            Err(CaptureError::InvalidFrame(_))
+        ));
+    }
+    #[test]
+    fn opaque_pixels_are_left_exactly_alone() {
+        // Where alpha is 255 the two representations are the same bytes, and a
+        // screenshot is opaque almost everywhere, so this path must not drift.
+        let mut data = vec![10, 20, 30, 255, 200, 100, 50, 255];
+        unpremultiply_rgba(&mut data).unwrap();
+        assert_eq!(data, vec![10, 20, 30, 255, 200, 100, 50, 255]);
+    }
+
+    #[test]
+    fn a_half_transparent_pixel_recovers_its_full_colour() {
+        // Premultiplied white at 50% alpha is (128, 128, 128, 128); straight,
+        // it is white.
+        let mut data = vec![128, 128, 128, 128];
+        unpremultiply_rgba(&mut data).unwrap();
+        assert_eq!(data, vec![255, 255, 255, 128]);
+    }
+
+    #[test]
+    fn a_fully_transparent_pixel_has_no_colour_to_recover() {
+        let mut data = vec![0, 0, 0, 0];
+        unpremultiply_rgba(&mut data).unwrap();
+        assert_eq!(data, vec![0, 0, 0, 0]);
+    }
+
+    #[test]
+    fn channels_above_the_alpha_cannot_overflow() {
+        // Not a legal premultiplied pixel, but a backend could hand one over,
+        // and dividing 255 by an alpha of 1 would wrap without the clamp.
+        let mut data = vec![255, 255, 255, 1];
+        unpremultiply_rgba(&mut data).unwrap();
+        assert_eq!(data, vec![255, 255, 255, 1]);
+    }
+
+    #[test]
+    fn premultiplying_and_undoing_it_round_trips_within_the_precision_left() {
+        // Premultiplication discards precision at low alpha and no inverse can
+        // invent it back, so the tolerance scales with how much was thrown
+        // away: 255/alpha is the size of one representable step.
+        for alpha in 1..=255u32 {
+            for straight in (0..=255u32).step_by(5) {
+                let premultiplied = ((straight * alpha + 127) / 255) as u8;
+                let mut data = vec![premultiplied, 0, 0, alpha as u8];
+                unpremultiply_rgba(&mut data).unwrap();
+                let tolerance = (255.0 / alpha as f64).ceil() as i32;
+                let drift = (i32::from(data[0]) - straight as i32).abs();
+                assert!(
+                    drift <= tolerance,
+                    "alpha={alpha} straight={straight}: got {}, off by {drift} \
+                     with a tolerance of {tolerance}",
+                    data[0]
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn unpremultiply_rejects_a_ragged_buffer() {
+        let mut data = vec![0u8; 7];
+        assert!(matches!(
+            unpremultiply_rgba(&mut data),
             Err(CaptureError::InvalidFrame(_))
         ));
     }
