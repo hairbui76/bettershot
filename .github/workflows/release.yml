@@ -1,6 +1,11 @@
 name: Release
 
-# Builds and publishes artefacts for a version tag.
+# Builds and publishes artefacts for a version tag pushed **by hand**.
+#
+# The normal path is release-please.yml: merge its release PR and it tags,
+# releases and attaches the binaries itself. This exists for the case where
+# someone tags manually, because a tag pushed with the default GITHUB_TOKEN
+# does not trigger workflows and so cannot reach this one.
 #
 # What this does NOT do, because it needs credentials this repository does not
 # hold: sign the Windows installer with an Authenticode certificate, or

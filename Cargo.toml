@@ -3,7 +3,8 @@ resolver = "3"
 members = ["crates/core", "crates/cli", "crates/render", "crates/capture", "crates/app"]
 
 [workspace.package]
-version = "0.1.0"
+# Bumped by release-please; see release-please-config.json.
+version = "0.1.0" # x-release-please-version
 edition = "2024"
 rust-version = "1.85"
 authors = ["bettershot contributors"]
@@ -13,10 +14,10 @@ repository = "https://github.com/bettershot/bettershot"
 license = "MPL-2.0"
 
 [workspace.dependencies]
-bettershot-core = { path = "crates/core", version = "0.1.0" }
-bettershot-cli = { path = "crates/cli", version = "0.1.0" }
-bettershot-capture = { path = "crates/capture", version = "0.1.0" }
-bettershot-render = { path = "crates/render", version = "0.1.0" }
+bettershot-core = { path = "crates/core", version = "0.1.0" } # x-release-please-version
+bettershot-cli = { path = "crates/cli", version = "0.1.0" } # x-release-please-version
+bettershot-capture = { path = "crates/capture", version = "0.1.0" } # x-release-please-version
+bettershot-render = { path = "crates/render", version = "0.1.0" } # x-release-please-version
 
 anyhow = "1.0"
 thiserror = "2.0"

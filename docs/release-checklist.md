@@ -158,10 +158,26 @@ The macOS backend has never been executed. Before it can be called supported:
 
 ## Tagging
 
-```sh
-git tag -a v1.0.0 -m "bettershot 1.0.0"
-git push origin v1.0.0
-```
+Do not tag by hand. `release-please` keeps a release pull request open against
+`main`, with the version bump and a changelog assembled from the commit
+messages; **merging that PR is the release**. It tags the commit, creates the
+GitHub release, and attaches the Linux, Windows and macOS archives.
 
-The release workflow builds and uploads the artefacts. Signing and notarization
-are separate steps that need credentials the repository does not hold.
+- [ ] The release PR's version is the one you expect. It is computed from
+      Conventional Commits since the last tag — `feat:` bumps the minor,
+      `fix:` the patch. To override, add a `Release-As: x.y.z` trailer to a
+      commit on `main`.
+- [ ] Its changelog reads like something a user would want, not a commit log.
+      Edit it in the PR if not; the PR is a normal branch.
+- [ ] `Cargo.lock` is in the PR. The workflow syncs it, because a version bump
+      moves five lines there and anything building `--locked` or `--frozen`
+      (the AUR package, for one) breaks without it.
+
+**The release is created as a draft on purpose.** The artefacts are unsigned —
+no Authenticode signature on Windows, no notarization on macOS — so they are
+for testing, not for publishing. Sign and notarize first, then publish the
+draft.
+
+A tag pushed by hand still works and is handled by `release.yml`; it exists
+only for that case, because a tag pushed with the default `GITHUB_TOKEN`
+cannot trigger a workflow.
