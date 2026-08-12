@@ -6,8 +6,8 @@
 
 ## Status
 
-**60 of 66 roadmap items are done**, and the project now builds and tests
-**green on real Linux, Windows and macOS runners**:
+**60 of 64 roadmap items in the current scope are done**, and the project now
+builds and tests **green on real Linux, Windows and macOS runners**:
 
 | Job | Result |
 | --- | --- |
@@ -28,11 +28,22 @@ That green run took four attempts, and each failure was a real defect that no
 amount of local care could have found — see
 [What CI found that nothing local could](#what-ci-found-that-nothing-local-could).
 
-The six remaining items need a signing certificate, an Apple Developer ID,
-distribution accounts, a Mac to *use*, or a desktop session that renders. None
-is blocked on design or on code that could have been written here — every one
-of them is a procurement or hardware dependency, which is why they are listed
-separately in [Not achievable without more hardware](#not-achievable-without-more-hardware).
+Two further items belong to [Phase 5 — macOS](#phase-5--macos-deferred), which
+is **deferred**: macOS is not needed yet. They are excluded from the count
+above rather than counted as outstanding work, since nobody is waiting on them.
+
+That leaves **four**, none of them blocked on design or on code that could have
+been written here:
+
+| Remaining | What it actually needs |
+| --- | --- |
+| **Sign** the MSI | An Authenticode certificate. CI already builds the installer, so this is a signature, not a build. |
+| Publish to Flathub, the AUR and winget-pkgs | An account on each. All three manifests are built or validated by CI. |
+| Confirm end-to-end latency | A desktop session. Most of the 150 ms budget is compositor round-trip and window creation, which no headless container can produce. |
+| Tag v1.0 | Walking [the checklist](docs/release-checklist.md) on Windows and the four Linux environments. |
+
+The first two are procurement. The last two need a machine with a screen — see
+[Not achievable without more hardware](#not-achievable-without-more-hardware).
 
 ## What CI found that nothing local could
 
@@ -169,15 +180,24 @@ Deliverable: bettershot as an always-available tool, not just a one-shot CLI.
 - [x] Release process mechanized: a tag-triggered workflow plus an explicit acceptance checklist ([docs/release-checklist.md](docs/release-checklist.md))
 - [ ] Actually tag v1.0 — requires walking that checklist on Windows and the four Linux environments
 
-## Phase 5 — macOS
+## Phase 5 — macOS *(deferred)*
+
+**Deferred by the project owner on 2026-08-12: macOS is not needed yet.** The
+two unchecked items below are the only ones that need Apple hardware or an
+Apple Developer ID, and they are excluded from the completion count at the top
+of this page for that reason — not because anything about them is finished.
+Everything else in this phase is written and compile-verified for
+`aarch64-apple-darwin`, so picking it back up is a matter of running it on a
+Mac rather than starting it.
+
 
 - [x] `capture` backend on ScreenCaptureKit with the full screen-recording permission flow (TCC preflight/request, stale-permission detection, guidance naming System Settings → Privacy & Security → Screen & System Audio Recording). **Compile-verified and clippy-clean for `aarch64-apple-darwin`, never run on a Mac** — see the caveat below.
 - [x] Cmd-based keybindings: the accelerator modifier already resolves to Command on macOS and Control elsewhere, with a test pinning it
 - [x] Menu bar presence on macOS: the tray icon *is* the menu bar item there, and the whole app including that code is **compile-verified** for `aarch64-apple-darwin`. App bundle `Info.plist` authored ([`packaging/macos/`](packaging/macos/)).
 - [x] Accessory activation policy, so daemon mode leaves the Dock: `crates/app/src/platform.rs`, applied on the daemon path only (a one-shot capture genuinely is a foreground app). **Compile-verified for `aarch64-apple-darwin`** against the real AppKit bindings and covered by the cross-compile job, to the same standard as the ScreenCaptureKit backend — never run on a Mac.
-- [ ] Retina scale verification — needs a Mac. Nothing about a HiDPI backing scale can be confirmed from a Linux container, and the accessory policy above still wants a human to confirm the Dock icon actually disappears.
+- [ ] *(deferred)* Retina scale verification — needs a Mac. Nothing about a HiDPI backing scale can be confirmed from a Linux container, and the accessory policy above still wants a human to confirm the Dock icon actually disappears.
 - [x] Homebrew cask authored, including the Screen Recording permission caveat: [`packaging/homebrew/`](packaging/homebrew/)
-- [ ] **Notarize** a universal dmg and publish the cask — needs an Apple Developer ID
+- [ ] *(deferred)* **Notarize** a universal dmg and publish the cask — needs an Apple Developer ID
 - [x] CI: `macos-latest` in the test matrix, plus a cross-compile job. The library crates (including the macOS capture stub) are **verified** to compile for `aarch64-apple-darwin`; the binary needs a real Mac only because `notify-rust` pulls `mac-notification-sys`, which requires the Apple SDK.
 
 ## Phase 6 — Beyond (unscheduled, ideas parking lot)
@@ -400,7 +420,7 @@ rather than marked done.
 | Flatpak / AUR / deb | **Flatpak now builds in CI** and is no longer a guess; what is left is a Flathub account and the submission PR. The `.deb` and `.rpm` have been built and validated here. The AUR `PKGBUILD` is still unbuilt: `makepkg` is Arch-only and is not available on this machine or on a GitHub runner without a container. |
 | v1.0 tag | The acceptance criteria say "holds on Windows + four Linux environments". None can be exercised here. |
 | End-to-end startup latency | The ~147 ms that is compositor round-trip and window creation needs a real session. bettershot's own share **is** measured at 3.2 ms. Everything else about performance is measured too — see [docs/performance.md](docs/performance.md). |
-| Phase 5 macOS capture | A Mac. ScreenCaptureKit and the TCC permission flow cannot be written blind and left untested. The capture crate ships a macOS stub that returns a clear `Unsupported` error naming this phase, and that stub is verified to compile for `aarch64-apple-darwin`. |
+| Phase 5 macOS capture *(deferred)* | A Mac. macOS is not needed yet, so this is parked rather than pending. ScreenCaptureKit and the TCC permission flow cannot be written blind and left untested. The capture crate ships a macOS stub that returns a clear `Unsupported` error naming this phase, and that stub is verified to compile for `aarch64-apple-darwin`. |
 
 ## Risks & watch items
 
