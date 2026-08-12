@@ -19,10 +19,14 @@ name: Release Please
 #     `x-release-please-version` instead — including the four
 #     `[workspace.dependencies]` pins, which are `^0.1.0` requirements that
 #     stop resolving the moment the workspace version moves past them.
-#   * The release is a **draft**. The artefacts are unsigned: the Windows
-#     installer has no Authenticode signature and the macOS build is not
-#     notarized. They are fine to download and test, and must not be published
-#     as though they were.
+#   * The release is a **prerelease**, not a draft. That is not cosmetic:
+#     GitHub only creates the git tag when a release is *published*, so a draft
+#     release leaves no tag, release-please cannot find its own last release,
+#     and it re-scans the whole history and re-bumps the version on every run.
+#     That is what produced 0.2.0, 0.3.0 and 0.4.0 in a row from the same
+#     commits. `prerelease` publishes the release — so the tag exists — while
+#     still marking it as not production, which these builds are not: they are
+#     unsigned and unnotarized.
 #   * The artefacts are built *in this workflow*. A tag pushed with the default
 #     `GITHUB_TOKEN` does not trigger other workflows, so `release.yml` would
 #     never fire for a release cut here and the release would have no binaries.
@@ -151,10 +155,18 @@ jobs:
           else
             tar czf "$staging.tar.gz" "$staging"
           fi
+          # Name the one archive this runner produced. Globbing for both
+          # extensions passes the non-matching pattern to `gh` verbatim, which
+          # then fails on a file that was never going to exist.
+          echo "ARCHIVE=$staging.${{ matrix.archive }}" >> "$GITHUB_ENV"
 
       - name: Attach to the release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ needs.release-please.outputs.tag_name }}
-        run: gh release upload "$TAG" bettershot-*.tar.gz bettershot-*.zip --clobber
+        run: |
+          set -euo pipefail
+          test -n "$TAG" || { echo "no tag name from release-please"; exit 1; }
+          test -f "$ARCHIVE" || { echo "the archive $ARCHIVE was not built"; exit 1; }
+          gh release upload "$TAG" "$ARCHIVE" --clobber
