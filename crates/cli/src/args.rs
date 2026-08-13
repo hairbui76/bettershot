@@ -142,6 +142,13 @@ pub struct Args {
     #[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
     pub no_window_decoration: Option<bool>,
 
+    /// Keep the window above other windows, like the Windows Snipping Tool.
+    ///
+    /// On by default. Pass `--always-on-top false` for an ordinary window.
+    /// Wayland compositors may ignore it.
+    #[arg(long, num_args = 0..=1, default_missing_value = "true", value_name = "BOOL")]
+    pub always_on_top: Option<bool>,
+
     /// Start with the toolbars hidden.
     #[arg(
         long,

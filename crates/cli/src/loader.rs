@@ -150,6 +150,7 @@ pub fn apply_args(config: &mut Config, args: &Args) {
         fullscreen,
         hide_toolbars,
         no_window_decoration,
+        always_on_top,
         save_format,
         save_after_copy,
         disable_notifications,

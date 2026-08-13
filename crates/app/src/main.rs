@@ -129,6 +129,7 @@ fn read_stdin_image() -> Result<RgbaImage> {
 
 fn run(app: BettershotApp) -> Result<()> {
     let starts_fullscreen = app.starts_fullscreen();
+    let starts_on_top = app.starts_on_top();
     let starts_hidden = app.starts_hidden();
     let size = app.initial_size();
 
@@ -138,6 +139,13 @@ fn run(app: BettershotApp) -> Result<()> {
     if starts_fullscreen {
         // The selection overlay must cover everything, with no chrome.
         viewport = viewport.with_fullscreen(true).with_decorations(false);
+    }
+    if starts_on_top {
+        // Like the Windows Snipping Tool: a capture is nearly always annotated
+        // *about* something else on screen, so the window has to stay in front
+        // of what it is describing. A request, not a guarantee — Wayland
+        // compositors are free to refuse it.
+        viewport = viewport.with_always_on_top();
     }
     if starts_hidden {
         // Daemon mode: resident but invisible until a hotkey fires.

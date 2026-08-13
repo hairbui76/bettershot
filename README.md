@@ -91,6 +91,10 @@ initial-tool = "arrow"
 initial-color = "#eb4d4b"
 annotation-size-factor = 1.0
 default-fill-shapes = false
+# Keep the window above other windows, like the Windows Snipping Tool, so the
+# editor does not vanish behind whatever you just captured. Wayland
+# compositors may ignore it.
+always-on-top = true
 action-on-enter = "save-to-clipboard"
 action-on-escape = "exit"
 output-filename = "~/Pictures/shot-%Y%m%d-%H%M%S.png"

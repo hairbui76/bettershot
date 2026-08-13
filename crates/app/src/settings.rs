@@ -96,6 +96,28 @@ impl SettingsWindow {
             .checkbox(&mut config.hide_toolbars, "Hide toolbars by default")
             .changed();
 
+        // Applied immediately rather than at the next launch: the whole point
+        // of the setting is what the window is doing right now, so a toggle
+        // that only takes effect next time would be impossible to judge.
+        if ui
+            .checkbox(
+                &mut config.always_on_top,
+                "Keep the window on top of other windows",
+            )
+            .on_hover_text("Like the Windows Snipping Tool. Wayland compositors may ignore it.")
+            .changed()
+        {
+            ui.ctx()
+                .send_viewport_cmd(egui::ViewportCommand::WindowLevel(
+                    if config.always_on_top {
+                        egui::WindowLevel::AlwaysOnTop
+                    } else {
+                        egui::WindowLevel::Normal
+                    },
+                ));
+            changed = true;
+        }
+
         ui.horizontal(|ui| {
             ui.label("Palette");
             for color in config.color_palette.all() {

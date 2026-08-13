@@ -453,6 +453,18 @@ pub struct Config {
     pub fullscreen: bool,
     pub hide_toolbars: bool,
     pub no_window_decoration: bool,
+    /// Keep the window above other windows, the way Windows' Snipping Tool
+    /// keeps its editor above whatever you just captured.
+    ///
+    /// On by default: a screenshot is nearly always annotated *about* something
+    /// else on screen, and a capture window that disappears behind the thing it
+    /// is describing is worse than useless. The selection overlay needs it for
+    /// a stronger reason — another always-on-top window would otherwise sit in
+    /// front of it and be impossible to select through.
+    ///
+    /// Wayland compositors are free to ignore this; it is a request, not a
+    /// guarantee.
+    pub always_on_top: bool,
     pub theme: Theme,
     /// UI language code, or "system" to follow the desktop. Only English ships
     /// today; see `crates/app/src/i18n.rs`.
@@ -501,6 +513,7 @@ impl Default for Config {
             fullscreen: false,
             hide_toolbars: false,
             no_window_decoration: false,
+            always_on_top: true,
             theme: Theme::default(),
             language: "system".to_owned(),
 
@@ -558,6 +571,7 @@ impl Config {
             fullscreen,
             hide_toolbars,
             no_window_decoration,
+            always_on_top,
             theme,
             save_format,
             save_after_copy,
@@ -624,6 +638,7 @@ impl Config {
             fullscreen: Some(self.fullscreen),
             hide_toolbars: Some(self.hide_toolbars),
             no_window_decoration: Some(self.no_window_decoration),
+            always_on_top: Some(self.always_on_top),
             theme: Some(self.theme),
             language: Some(self.language.clone()),
 
@@ -728,6 +743,7 @@ pub struct ConfigFile {
     pub fullscreen: Option<bool>,
     pub hide_toolbars: Option<bool>,
     pub no_window_decoration: Option<bool>,
+    pub always_on_top: Option<bool>,
     pub theme: Option<Theme>,
     pub language: Option<String>,
 
@@ -1116,6 +1132,42 @@ mod tests {
         config.merge_toml("initial-tool = \"arrow\"").unwrap();
         config.merge_toml("initial-tool = \"brush\"").unwrap();
         assert_eq!(config.initial_tool, Tools::Brush, "last write wins");
+    }
+}
+
+#[cfg(test)]
+mod always_on_top_tests {
+    use super::*;
+
+    #[test]
+    fn the_window_floats_by_default() {
+        // A screenshot is nearly always annotated *about* something else on
+        // screen. Defaulting this off would put the editor behind the thing it
+        // is describing, which is what the Snipping Tool gets right.
+        assert!(Config::default().always_on_top);
+    }
+
+    #[test]
+    fn it_can_be_turned_off_from_a_config_file() {
+        let mut config = Config::default();
+        config.merge_toml("always-on-top = false").unwrap();
+        assert!(!config.always_on_top);
+    }
+
+    #[test]
+    fn it_survives_a_round_trip_through_the_on_disk_shape() {
+        // The settings window writes the config back out; a key that does not
+        // round-trip silently reverts the next time the file is loaded.
+        for wanted in [true, false] {
+            let config = Config {
+                always_on_top: wanted,
+                ..Config::default()
+            };
+            let written = toml::to_string(&config.to_file()).unwrap();
+            let mut reloaded = Config::default();
+            reloaded.merge_toml(&written).unwrap();
+            assert_eq!(reloaded.always_on_top, wanted, "wrote:\n{written}");
+        }
     }
 }
 

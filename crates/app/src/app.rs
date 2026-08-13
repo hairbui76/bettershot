@@ -185,6 +185,16 @@ impl BettershotApp {
         matches!(self.stage, Stage::Selecting(_)) || self.config.fullscreen
     }
 
+    /// Whether the window should sit above other windows.
+    ///
+    /// The selection overlay takes this regardless of the setting: it is
+    /// fullscreen, but "fullscreen" does not mean "in front", and any
+    /// always-on-top window belonging to another application would otherwise
+    /// float over the very region the user is trying to drag out.
+    pub fn starts_on_top(&self) -> bool {
+        matches!(self.stage, Stage::Selecting(_)) || self.config.always_on_top
+    }
+
     /// True when the process should start with no visible window.
     pub fn starts_hidden(&self) -> bool {
         matches!(self.stage, Stage::Idle)

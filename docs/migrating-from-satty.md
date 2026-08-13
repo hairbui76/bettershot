@@ -46,6 +46,7 @@ Flags that exist in both tools keep their names and meanings.
 | — | `--capture <MODE>` | New: `region`, `window`, `monitor`, `all`. |
 | — | `--delay <SECONDS>` | New: for catching menus and hover states. |
 | — | `--include-cursor` | New: X11 and Windows; the Wayland portal has no cursor control. |
+| — | `--always-on-top <BOOL>` | New: keep the window in front, like the Snipping Tool. On by default. |
 | — | `--no-config` | New: ignore the config file entirely. |
 
 ## Configuration file
