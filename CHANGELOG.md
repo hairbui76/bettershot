@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0](https://github.com/hairbui76/bettershot/compare/v0.4.0...v0.5.0) (2026-08-13)
+
+
+### Features
+
+* **app:** keep the window on top, like the Windows Snipping Tool ([04266c1](https://github.com/hairbui76/bettershot/commit/04266c1d87df7ecb5a203c7a82c81e05193140fa))
+
 ## [0.4.0](https://github.com/hairbui76/bettershot/compare/v0.3.0...v0.4.0) (2026-08-12)
 
 
