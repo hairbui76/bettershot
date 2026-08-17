@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/hairbui76/bettershot/compare/v0.5.0...v0.6.0) (2026-08-17)
+
+
+### Features
+
+* **app:** floating capture-mode bar on the selection overlay ([a8d6452](https://github.com/hairbui76/bettershot/commit/a8d6452ae74c01346bb820af160d152d070d3cb7))
+
 ## [0.5.0](https://github.com/hairbui76/bettershot/compare/v0.4.0...v0.5.0) (2026-08-13)
 
 
