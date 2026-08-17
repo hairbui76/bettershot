@@ -169,6 +169,7 @@ impl BettershotApp {
             let overlay = Overlay::new(
                 acquired.image,
                 &acquired.windows,
+                &acquired.monitors,
                 acquired.origin,
                 acquired.mode,
                 config.capture.snap_to_windows,
@@ -288,6 +289,7 @@ impl BettershotApp {
                 let overlay = Overlay::new(
                     acquired.image,
                     &acquired.windows,
+                    &acquired.monitors,
                     acquired.origin,
                     acquired.mode,
                     self.config.capture.snap_to_windows,
@@ -556,6 +558,7 @@ mod tests {
         let overlay = Overlay::new(
             image(),
             &[],
+            &[],
             bettershot_core::math::Vec2D::ZERO,
             CaptureMode::Region,
             true,
@@ -592,6 +595,7 @@ mod tests {
             &ctx,
             Ok(Acquired {
                 image: image(),
+                monitors: Vec::new(),
                 windows: Vec::new(),
                 origin: bettershot_core::math::Vec2D::ZERO,
                 needs_selection: true,
@@ -605,6 +609,7 @@ mod tests {
             &ctx,
             Ok(Acquired {
                 image: image(),
+                monitors: Vec::new(),
                 windows: Vec::new(),
                 origin: bettershot_core::math::Vec2D::ZERO,
                 needs_selection: false,
@@ -642,6 +647,7 @@ mod tests {
     fn a_capture_that_needs_no_selection_goes_straight_to_the_editor() {
         let acquired = Acquired {
             image: image(),
+            monitors: Vec::new(),
             windows: Vec::new(),
             origin: bettershot_core::math::Vec2D::ZERO,
             needs_selection: false,
@@ -656,6 +662,7 @@ mod tests {
     fn a_region_capture_goes_to_the_overlay_first() {
         let acquired = Acquired {
             image: image(),
+            monitors: Vec::new(),
             windows: Vec::new(),
             origin: bettershot_core::math::Vec2D::ZERO,
             needs_selection: true,

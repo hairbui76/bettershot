@@ -39,6 +39,8 @@ pub struct RegionSelection {
     bounds: Rect,
     /// Candidate window rectangles, in frame coordinates, topmost first.
     windows: Vec<Rect>,
+    /// Monitor rectangles, in frame coordinates.
+    monitors: Vec<Rect>,
     mode: CaptureMode,
     snap: bool,
     drag: Option<(Vec2D, Vec2D)>,
@@ -46,10 +48,17 @@ pub struct RegionSelection {
 }
 
 impl RegionSelection {
-    pub fn new(bounds: Rect, windows: Vec<Rect>, mode: CaptureMode, snap: bool) -> Self {
+    pub fn new(
+        bounds: Rect,
+        windows: Vec<Rect>,
+        monitors: Vec<Rect>,
+        mode: CaptureMode,
+        snap: bool,
+    ) -> Self {
         Self {
             bounds,
             windows,
+            monitors,
             mode,
             snap,
             drag: None,
@@ -63,6 +72,38 @@ impl RegionSelection {
 
     pub fn is_dragging(&self) -> bool {
         self.drag.is_some()
+    }
+
+    pub fn mode(&self) -> CaptureMode {
+        self.mode
+    }
+
+    /// Switch what a click selects, mid-selection.
+    ///
+    /// Abandons any drag in progress: the gesture was started with a different
+    /// intent, and carrying it across would let a half-dragged rectangle
+    /// survive into a mode where dragging is not what the user is doing.
+    pub fn set_mode(&mut self, mode: CaptureMode) {
+        if self.mode != mode {
+            self.mode = mode;
+            self.drag = None;
+        }
+    }
+
+    /// The monitor containing `point`. Monitors do not overlap, so the first
+    /// hit is the only hit.
+    pub fn monitor_at(&self, point: Vec2D) -> Option<Rect> {
+        self.monitors.iter().copied().find(|m| m.contains(point))
+    }
+
+    /// What a click selects in the current mode, ignoring drags.
+    fn click_target(&self, at: Vec2D) -> Option<Rect> {
+        match self.mode {
+            CaptureMode::Monitor => self.monitor_at(at),
+            // Region mode falls back to the window under the pointer, which is
+            // how "click a window to grab it" has always worked.
+            _ => self.window_at(at),
+        }
     }
 
     pub fn hover(&self) -> Option<Vec2D> {
@@ -91,9 +132,9 @@ impl RegionSelection {
         if dragged.width() >= MIN_SELECTION && dragged.height() >= MIN_SELECTION {
             return Some(dragged.rounded());
         }
-        // A click rather than a drag: take the window underneath, which is how
-        // "click a window to grab it" works.
-        self.window_at(at)
+        // A click rather than a drag: take whatever the mode says is under the
+        // pointer.
+        self.click_target(at)
             .map(|r| r.clamped_to(self.bounds).rounded())
     }
 
@@ -126,13 +167,13 @@ impl RegionSelection {
             }
             // Fall through to the window hint while the drag is still tiny.
         }
-        // Window mode always previews the window under the pointer; region
-        // mode only does so when snapping is enabled and nothing is dragged.
-        let wants_window_hint =
-            self.mode == CaptureMode::Window || (self.snap && self.drag.is_none());
-        if wants_window_hint {
+        // Window and monitor modes always preview what is under the pointer;
+        // region mode only does so when snapping is enabled and nothing is
+        // being dragged.
+        let always_hints = matches!(self.mode, CaptureMode::Window | CaptureMode::Monitor);
+        if always_hints || (self.snap && self.drag.is_none()) {
             if let Some(pos) = self.hover {
-                return self.window_at(pos).map(|r| r.clamped_to(self.bounds));
+                return self.click_target(pos).map(|r| r.clamped_to(self.bounds));
             }
         }
         None
@@ -151,6 +192,7 @@ impl Overlay {
     pub fn new(
         image: image::RgbaImage,
         windows: &[WindowInfo],
+        monitors: &[Rect],
         frame_origin: Vec2D,
         mode: CaptureMode,
         snap: bool,
@@ -165,8 +207,16 @@ impl Overlay {
             .filter(|r| r.intersects(bounds))
             .collect();
 
+        // Monitor bounds share the window coordinate space, so they rebase the
+        // same way.
+        let monitors = monitors
+            .iter()
+            .map(|m| m.translated(-frame_origin))
+            .filter(|r| r.intersects(bounds))
+            .collect();
+
         Self {
-            selection: RegionSelection::new(bounds, windows, mode, snap),
+            selection: RegionSelection::new(bounds, windows, monitors, mode, snap),
             texture: None,
             image,
             outcome: Selection::Pending,
@@ -201,6 +251,20 @@ impl Overlay {
             if i.key_pressed(egui::Key::Escape) {
                 self.outcome = Selection::Cancelled;
             }
+            // The digits are free here: they only mean palette colours in the
+            // editor, which is a different mode of the same window.
+            for (key, mode) in [
+                (egui::Key::Num1, CaptureMode::Region),
+                (egui::Key::Num2, CaptureMode::Window),
+                (egui::Key::Num3, CaptureMode::Monitor),
+            ] {
+                if i.key_pressed(key) {
+                    self.selection.set_mode(mode);
+                }
+            }
+            if i.key_pressed(egui::Key::Num4) {
+                self.outcome = Selection::Confirmed(self.selection.bounds().rounded());
+            }
         });
         if self.outcome != Selection::Pending {
             return;
@@ -208,6 +272,12 @@ impl Overlay {
 
         let texture = self.texture(&ctx);
         let bounds = self.selection.bounds();
+
+        let toolbar = self.draw_toolbar(&ctx);
+        // A mode button may have finished the selection outright.
+        if self.outcome != Selection::Pending {
+            return;
+        }
 
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE)
@@ -234,7 +304,16 @@ impl Overlay {
                 painter.add(egui::Shape::mesh(mesh));
 
                 let pointer = ctx.input(|i| i.pointer.latest_pos());
-                self.selection.set_hover(pointer.map(to_image));
+                // Pointer over the bar is pointer over the bar, not over the
+                // screenshot: no hover preview, no crosshair, no drag.
+                let on_toolbar = pointer.is_some_and(|p| toolbar.contains(p));
+                self.selection
+                    .set_hover(pointer.filter(|_| !on_toolbar).map(to_image));
+
+                if on_toolbar {
+                    self.paint_selection(&painter, drawn, scale);
+                    return;
+                }
 
                 if response.drag_started() {
                     if let Some(p) = pointer {
@@ -259,6 +338,79 @@ impl Overlay {
 
                 self.paint_selection(&painter, drawn, scale);
             });
+    }
+
+    /// The floating capture-mode bar, the way the Windows Snipping Tool puts
+    /// one at the top of the screen.
+    ///
+    /// Returns the rectangle it occupies so the canvas underneath can ignore
+    /// clicks that landed on it. egui does route pointer input to the topmost
+    /// layer, but the canvas allocates the *whole* overlay with a drag sense,
+    /// and a press that starts on a button and drifts would otherwise begin a
+    /// selection behind the bar.
+    fn draw_toolbar(&mut self, ctx: &egui::Context) -> egui::Rect {
+        // Modes a click can select. "Full screen" is not among them: it is an
+        // action, not a mode, and fires immediately like the Snipping Tool's
+        // fullscreen snip rather than asking for a second click.
+        const MODES: [(CaptureMode, &str, &str); 3] = [
+            (CaptureMode::Region, "Region", "Drag out a rectangle  (1)"),
+            (
+                CaptureMode::Window,
+                "Window",
+                "Click the window under the pointer  (2)",
+            ),
+            (
+                CaptureMode::Monitor,
+                "Monitor",
+                "Click the monitor under the pointer  (3)",
+            ),
+        ];
+
+        let mut bar = egui::Rect::NOTHING;
+        egui::Area::new(egui::Id::new("bettershot-capture-modes"))
+            .order(egui::Order::Foreground)
+            .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 16.0))
+            .show(ctx, |ui| {
+                let painted = egui::Frame::popup(ui.style())
+                    .corner_radius(10.0)
+                    .inner_margin(egui::Margin::symmetric(8, 6))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            for (mode, label, hint) in MODES {
+                                let active = self.selection.mode() == mode;
+                                if ui
+                                    .selectable_label(active, label)
+                                    .on_hover_text(hint)
+                                    .clicked()
+                                {
+                                    self.selection.set_mode(mode);
+                                }
+                            }
+
+                            ui.separator();
+
+                            if ui
+                                .button("Full screen")
+                                .on_hover_text("Capture everything, right now  (4)")
+                                .clicked()
+                            {
+                                self.outcome =
+                                    Selection::Confirmed(self.selection.bounds().rounded());
+                            }
+
+                            ui.separator();
+
+                            if ui.button("✕").on_hover_text("Cancel  (Esc)").clicked() {
+                                self.outcome = Selection::Cancelled;
+                            }
+                        });
+                    });
+                // The frame's own rect, not `ui.min_rect()`: it includes the
+                // popup margin and shadow padding, which is the area the user
+                // sees and therefore the area a click can land on.
+                bar = painted.response.rect;
+            });
+        bar
     }
 
     fn paint_selection(&self, painter: &egui::Painter, drawn: Rect, scale: f32) {
@@ -290,10 +442,20 @@ impl Overlay {
             }
             None => {
                 painter.rect_filled(to_rect(drawn), 0.0, dim);
+                // Mode-aware: the bar above changes what a click does, so a
+                // fixed line would be telling the user to do the wrong thing
+                // two thirds of the time.
+                let hint = match self.selection.mode() {
+                    CaptureMode::Window => "Click a window · or drag out a region · Esc to cancel",
+                    CaptureMode::Monitor => {
+                        "Click a monitor · or drag out a region · Esc to cancel"
+                    }
+                    _ => "Drag to select a region · click a window · Esc to cancel",
+                };
                 painter.text(
                     to_rect(drawn).center(),
                     egui::Align2::CENTER_CENTER,
-                    "Drag to select a region · click a window · Esc to cancel",
+                    hint,
                     egui::FontId::proportional(18.0),
                     egui::Color32::WHITE,
                 );
@@ -376,9 +538,103 @@ mod tests {
                 Rect::from_xywh(0.0, 0.0, 600.0, 500.0),
                 Rect::from_xywh(100.0, 100.0, 200.0, 150.0),
             ],
+            // Two side-by-side monitors making up the 1000x800 desktop.
+            vec![
+                Rect::from_xywh(0.0, 0.0, 500.0, 800.0),
+                Rect::from_xywh(500.0, 0.0, 500.0, 800.0),
+            ],
             mode,
             snap,
         )
+    }
+
+    #[test]
+    fn monitor_mode_previews_the_monitor_under_the_pointer() {
+        let mut s = selection(CaptureMode::Monitor, false);
+        s.set_hover(Some(Vec2D::new(700.0, 400.0)));
+        assert_eq!(
+            s.current().unwrap(),
+            Rect::from_xywh(500.0, 0.0, 500.0, 800.0),
+            "the right-hand monitor"
+        );
+        s.set_hover(Some(Vec2D::new(100.0, 400.0)));
+        assert_eq!(
+            s.current().unwrap(),
+            Rect::from_xywh(0.0, 0.0, 500.0, 800.0)
+        );
+    }
+
+    #[test]
+    fn monitor_mode_clicks_select_a_whole_monitor_not_a_window() {
+        // The same click in window mode would land on the big window at the
+        // origin, so this is the distinction the toolbar buys.
+        let mut s = selection(CaptureMode::Monitor, false);
+        let at = Vec2D::new(50.0, 50.0);
+        s.begin_drag(at);
+        assert_eq!(
+            s.end_drag(at),
+            Some(Rect::from_xywh(0.0, 0.0, 500.0, 800.0))
+        );
+
+        let mut s = selection(CaptureMode::Window, false);
+        s.begin_drag(at);
+        assert_eq!(
+            s.end_drag(at),
+            Some(Rect::from_xywh(0.0, 0.0, 600.0, 500.0))
+        );
+    }
+
+    #[test]
+    fn switching_mode_abandons_a_drag_in_progress() {
+        // The gesture was begun with a different intent. Carrying it over would
+        // let a half-dragged rectangle survive into a mode where dragging is
+        // not what the user is doing.
+        let mut s = selection(CaptureMode::Region, false);
+        s.begin_drag(Vec2D::new(10.0, 10.0));
+        s.update_drag(Vec2D::new(400.0, 300.0));
+        assert!(s.is_dragging());
+
+        s.set_mode(CaptureMode::Window);
+        assert!(!s.is_dragging());
+        assert_eq!(s.mode(), CaptureMode::Window);
+    }
+
+    #[test]
+    fn re_selecting_the_current_mode_leaves_a_drag_alone() {
+        // Clicking the already-active button is a no-op, not a cancel.
+        let mut s = selection(CaptureMode::Region, false);
+        s.begin_drag(Vec2D::new(10.0, 10.0));
+        s.update_drag(Vec2D::new(400.0, 300.0));
+        s.set_mode(CaptureMode::Region);
+        assert!(s.is_dragging());
+    }
+
+    #[test]
+    fn a_deliberate_drag_still_wins_in_every_mode() {
+        // Dragging out a rectangle is unambiguous, so it should not be
+        // second-guessed just because a click would have meant something else.
+        for mode in [
+            CaptureMode::Region,
+            CaptureMode::Window,
+            CaptureMode::Monitor,
+        ] {
+            let mut s = selection(mode, false);
+            s.begin_drag(Vec2D::new(600.0, 600.0));
+            let dragged = s.end_drag(Vec2D::new(800.0, 700.0));
+            assert_eq!(
+                dragged,
+                Some(Rect::from_xywh(600.0, 600.0, 200.0, 100.0)),
+                "mode {mode:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_click_outside_every_monitor_selects_nothing() {
+        let mut s = selection(CaptureMode::Monitor, false);
+        assert!(s.monitor_at(Vec2D::new(5000.0, 5000.0)).is_none());
+        s.begin_drag(Vec2D::new(5000.0, 5000.0));
+        assert_eq!(s.end_drag(Vec2D::new(5000.0, 5000.0)), None);
     }
 
     #[test]
@@ -497,6 +753,7 @@ mod tests {
         let overlay = Overlay::new(
             image,
             &windows,
+            &[],
             Vec2D::new(-1920.0, 0.0),
             CaptureMode::Window,
             true,
@@ -521,6 +778,7 @@ mod tests {
         let overlay = Overlay::new(
             image::RgbaImage::new(500, 500),
             &windows,
+            &[],
             Vec2D::ZERO,
             CaptureMode::Window,
             true,

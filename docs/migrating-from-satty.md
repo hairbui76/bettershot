@@ -101,6 +101,11 @@ Identical, with two additions:
 
 ## Behaviour differences worth knowing
 
+- **The selection overlay has a capture-mode bar.** Satty never sees this step
+  at all — it is handed an image. bettershot floats a bar at the top of the
+  overlay so region, window and monitor selection are one gesture apart, the
+  way the Windows Snipping Tool works.
+
 - **Obscure (blur) sampling.** In bettershot, blur and pixelate always read the
   original screenshot, so drawing over a blurred region, undoing an annotation
   underneath it, or cropping never changes what the blur hides. The preview on

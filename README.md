@@ -53,6 +53,12 @@ bettershot --daemon
 grim -g "$(slurp)" - | bettershot --filename -
 ```
 
+While the selection overlay is up, a floating bar at the top switches what a
+click selects — **Region**, **Window** or **Monitor** — plus **Full screen** to
+grab everything at once. Keys <kbd>1</kbd>–<kbd>4</kbd> do the same, and
+<kbd>Esc</kbd> cancels. Switching mode mid-selection does not re-take the
+screenshot: it is all chosen from the one frozen frame.
+
 ### Keyboard
 
 | Key | Action |

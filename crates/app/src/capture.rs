@@ -19,6 +19,10 @@ pub struct Acquired {
     pub image: RgbaImage,
     /// Windows to snap to, empty when snapping is off or enumeration failed.
     pub windows: Vec<WindowInfo>,
+    /// Monitor rectangles in virtual-desktop coordinates, so the overlay can
+    /// offer "this monitor" as a capture mode. Empty when enumeration failed
+    /// or no selection is needed.
+    pub monitors: Vec<bettershot_core::math::Rect>,
     /// Where the frame sits in the virtual desktop, so window rectangles can
     /// be rebased onto it.
     pub origin: Vec2D,
@@ -74,9 +78,21 @@ pub fn acquire(mode: CaptureMode, config: &Config) -> Result<Acquired> {
             Vec::new()
         };
 
+    // Only needed for the overlay's monitor mode; a failure here costs that
+    // one button, not the capture.
+    let monitors = if needs_selection {
+        backend
+            .monitors()
+            .map(|list| list.iter().map(|m| m.bounds).collect())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+
     Ok(Acquired {
         image,
         windows,
+        monitors,
         origin: frame.origin,
         needs_selection,
         mode,
