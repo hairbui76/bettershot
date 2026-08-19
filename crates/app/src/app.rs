@@ -125,6 +125,19 @@ impl BettershotApp {
             log::warn!("{warning}");
         }
 
+        // Say it somewhere the user can actually see. A daemon has no window
+        // by design, and on Windows the binary is a GUI-subsystem executable
+        // with no console, so the log lines above reach nobody. Without this,
+        // a hotkey that failed to register is indistinguishable from a program
+        // that is not running.
+        let (title, mut body) = hotkeys.announcement();
+        if !warnings.is_empty() {
+            if let Some(path) = bettershot_cli::config_path() {
+                body.push_str(&format!("\n\nConfig file: {}", path.display()));
+            }
+        }
+        crate::notify::notify(&config, &title, &body);
+
         if !hotkeys.is_active() && tray.is_none() {
             let mut message = String::from(
                 "--daemon has nothing that could start a capture, so it would run \

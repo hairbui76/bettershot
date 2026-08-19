@@ -119,8 +119,27 @@ include-cursor = false
 
 ### Staying resident
 
-`bettershot --daemon` keeps the process running with no visible window until a
-global hotkey or the tray icon starts a capture. Configure it with:
+This is the Snipping Tool arrangement: nothing on screen until you press the
+key, then the frozen screen with the capture bar over it.
+
+```sh
+bettershot --daemon
+```
+
+It runs with no visible window until a global hotkey or the tray icon starts a
+capture, then shows the overlay with the mode bar. On startup it sends a
+desktop notification naming the keys that are live — a daemon has no window to
+put that in, and on Windows the binary has no console either, so a hotkey that
+failed to register would otherwise be indistinguishable from a program that is
+not running.
+
+> **Windows 11 takes PrintScreen.** Recent builds bind it to the built-in
+> Snipping Tool, so bettershot's default binding collides on a stock install
+> and the startup notification will say so. Either free the key up under
+> *Settings → Accessibility → Keyboard*, or give bettershot a different one
+> below.
+
+Configure it with:
 
 ```toml
 [daemon]

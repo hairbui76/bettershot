@@ -41,6 +41,22 @@ pub enum Trigger {
     Quit,
 }
 
+/// What to tell the user when a global hotkey will not register.
+///
+/// Deliberately per-platform. The Wayland answer — bind the compositor — is
+/// wrong and confusing on Windows, where the protocol has nothing to do with
+/// it and the cause is almost always another application holding the key.
+/// Windows 11 in particular binds PrintScreen to its own Snipping Tool out of
+/// the box, so bettershot's default binding collides on a stock install.
+#[cfg(target_os = "windows")]
+const REBIND_ADVICE: &str = "Pick a different key under [daemon] hotkeys in the \
+     config file, or use the tray icon. Note that Windows 11 gives PrintScreen \
+     to its own Snipping Tool by default (Settings > Accessibility > Keyboard).";
+
+#[cfg(not(target_os = "windows"))]
+const REBIND_ADVICE: &str = "Bind your compositor to `bettershot --capture region` \
+     instead, or pick a different key under [daemon] hotkeys in the config file.";
+
 /// Registered global hotkeys.
 ///
 /// The manager must outlive the registrations, so it is kept even when every
@@ -51,6 +67,9 @@ pub struct Hotkeys {
     bindings: HashMap<u32, CaptureMode>,
     /// The registered keys, kept so they can be released explicitly.
     registered: Vec<HotKey>,
+    /// The bindings that actually took, as the user wrote them, so the daemon
+    /// can tell them which keys are live.
+    working: Vec<(String, CaptureMode)>,
     /// Human-readable reasons individual bindings did not take, so the editor
     /// can tell the user once rather than silently doing nothing.
     failures: Vec<String>,
@@ -61,6 +80,7 @@ impl Hotkeys {
     pub fn register(config: &DaemonConfig) -> Self {
         let mut bindings = HashMap::new();
         let mut failures = Vec::new();
+        let mut working = Vec::new();
 
         let mut registered = Vec::new();
 
@@ -69,6 +89,7 @@ impl Hotkeys {
                 manager: None,
                 bindings,
                 registered,
+                working,
                 failures,
             };
         }
@@ -79,13 +100,14 @@ impl Hotkeys {
                 // The usual cause is Wayland, where no application may grab a
                 // global key.
                 failures.push(format!(
-                    "global hotkeys are unavailable on this session ({e}); \
-                     bind your compositor to `bettershot --capture region` instead"
+                    "global hotkeys are unavailable on this session ({e}); {}",
+                    REBIND_ADVICE
                 ));
                 return Self {
                     manager: None,
                     bindings,
                     registered,
+                    working,
                     failures,
                 };
             }
@@ -103,9 +125,14 @@ impl Hotkeys {
                 Ok(()) => {
                     bindings.insert(hotkey.id(), binding.mode);
                     registered.push(hotkey);
+                    working.push((binding.key.trim().to_owned(), binding.mode));
                 }
                 // Almost always "another application already has this key".
-                Err(e) => failures.push(format!("could not register `{}`: {e}", binding.key)),
+                Err(e) => failures.push(format!(
+                    "could not register `{}` ({e}) -- another application probably \
+                     has that key already. {}",
+                    binding.key, REBIND_ADVICE
+                )),
             }
         }
 
@@ -113,6 +140,7 @@ impl Hotkeys {
             manager: Some(manager),
             bindings,
             registered,
+            working,
             failures,
         }
     }
@@ -133,6 +161,41 @@ impl Hotkeys {
 
     /// A one-line summary for the log, so a user running with `-v` can see
     /// whether their hotkeys were accepted.
+    /// What the user should be told at startup, as (title, body).
+    ///
+    /// Separate from [`Self::summary`], which is a log line. A daemon is
+    /// invisible by design, and on Windows the binary is a GUI-subsystem
+    /// executable with no console at all — anything logged to stderr is simply
+    /// discarded. Without saying this somewhere the user can see, the failure
+    /// mode is "I press the key, nothing happens, and there is nowhere to find
+    /// out why".
+    pub fn announcement(&self) -> (String, String) {
+        let mut body = String::new();
+        if self.working.is_empty() {
+            body.push_str("No global hotkey is active.");
+        } else {
+            body.push_str("Press ");
+            for (i, (key, mode)) in self.working.iter().enumerate() {
+                if i > 0 {
+                    body.push_str(", ");
+                }
+                body.push_str(&format!("{key} for {}", mode.name()));
+            }
+            body.push('.');
+        }
+        for failure in &self.failures {
+            body.push_str("\n\n");
+            body.push_str(failure);
+        }
+
+        let title = if self.failures.is_empty() {
+            "bettershot is running".to_owned()
+        } else {
+            "bettershot is running, but a hotkey did not register".to_owned()
+        };
+        (title, body)
+    }
+
     pub fn summary(&self) -> String {
         match (self.registered_count(), self.failures.len()) {
             (0, 0) => "no hotkeys configured".to_owned(),
@@ -302,6 +365,65 @@ impl Tray {
 
     pub fn poll(&self) -> Option<Trigger> {
         None
+    }
+}
+
+#[cfg(test)]
+mod announcement_tests {
+    use super::*;
+
+    fn hotkeys(working: &[(&str, CaptureMode)], failures: &[&str]) -> Hotkeys {
+        Hotkeys {
+            manager: None,
+            bindings: HashMap::new(),
+            registered: Vec::new(),
+            working: working.iter().map(|(k, m)| ((*k).to_owned(), *m)).collect(),
+            failures: failures.iter().map(|f| (*f).to_owned()).collect(),
+        }
+    }
+
+    #[test]
+    fn a_working_daemon_says_which_key_to_press() {
+        // The whole point: a daemon is invisible, so "it is running" is not
+        // enough. The user needs the key.
+        let (title, body) = hotkeys(&[("PrintScreen", CaptureMode::Region)], &[]).announcement();
+        assert_eq!(title, "bettershot is running");
+        assert!(body.contains("PrintScreen"), "{body}");
+        assert!(body.contains("region"), "{body}");
+    }
+
+    #[test]
+    fn a_failed_binding_is_reported_in_the_title_not_buried() {
+        // A notification body may be truncated or collapsed by the desktop, so
+        // the fact that something is wrong has to survive in the title.
+        let (title, body) = hotkeys(&[], &["could not register `PrintScreen`"]).announcement();
+        assert!(title.contains("did not register"), "{title}");
+        assert!(body.contains("PrintScreen"), "{body}");
+        assert!(body.contains("No global hotkey is active"), "{body}");
+    }
+
+    #[test]
+    fn a_partial_failure_still_lists_the_keys_that_work() {
+        let (title, body) = hotkeys(
+            &[("PrintScreen", CaptureMode::Region)],
+            &["could not register `Shift+PrintScreen`"],
+        )
+        .announcement();
+        assert!(title.contains("did not register"), "{title}");
+        assert!(body.contains("PrintScreen for region"), "{body}");
+        assert!(body.contains("Shift+PrintScreen"), "{body}");
+    }
+
+    #[test]
+    fn the_rebind_advice_suits_the_platform() {
+        // "Bind your compositor" is meaningless on Windows, where the cause is
+        // another application holding the key rather than the display protocol.
+        if cfg!(target_os = "windows") {
+            assert!(REBIND_ADVICE.contains("Snipping Tool"), "{REBIND_ADVICE}");
+            assert!(!REBIND_ADVICE.contains("compositor"), "{REBIND_ADVICE}");
+        } else {
+            assert!(REBIND_ADVICE.contains("compositor"), "{REBIND_ADVICE}");
+        }
     }
 }
 
