@@ -125,19 +125,6 @@ impl BettershotApp {
             log::warn!("{warning}");
         }
 
-        // Say it somewhere the user can actually see. A daemon has no window
-        // by design, and on Windows the binary is a GUI-subsystem executable
-        // with no console, so the log lines above reach nobody. Without this,
-        // a hotkey that failed to register is indistinguishable from a program
-        // that is not running.
-        let (title, mut body) = hotkeys.announcement();
-        if !warnings.is_empty() {
-            if let Some(path) = bettershot_cli::config_path() {
-                body.push_str(&format!("\n\nConfig file: {}", path.display()));
-            }
-        }
-        crate::notify::notify(&config, &title, &body);
-
         if !hotkeys.is_active() && tray.is_none() {
             let mut message = String::from(
                 "--daemon has nothing that could start a capture, so it would run \
@@ -153,6 +140,18 @@ impl BettershotApp {
             );
             return Err(message);
         }
+
+        // Only once the daemon is actually going to run. Announcing "bettershot
+        // is running" and then returning an error would be a lie, and it would
+        // also make every test that exercises the refusal path talk to the
+        // notification daemon.
+        let (title, mut body) = hotkeys.announcement();
+        if !warnings.is_empty() {
+            if let Some(path) = bettershot_cli::config_path() {
+                body.push_str(&format!("\n\nConfig file: {}", path.display()));
+            }
+        }
+        crate::notify::notify(&config, &title, &body);
 
         let mut app = Self::with_stage(config, Stage::Idle);
         app.daemon = Some(Daemon {
