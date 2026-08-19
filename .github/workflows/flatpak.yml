@@ -45,9 +45,24 @@ jobs:
 
       - name: Install flatpak-builder
         run: |
-          sudo apt-get update
+          # A hung Ubuntu mirror otherwise blocks this step until the job
+          # times out hours later. Each attempt is killed rather than waited on.
           # aiohttp and tomlkit are what flatpak-cargo-generator.py imports.
-          sudo apt-get install -y flatpak flatpak-builder python3-aiohttp python3-tomlkit
+          for attempt in 1 2 3; do
+            if timeout 180 sudo apt-get update \
+              && timeout 420 sudo apt-get install -y \
+                   flatpak flatpak-builder python3-aiohttp python3-tomlkit; then
+              break
+            fi
+            echo "::warning::apt attempt $attempt failed or hung; retrying"
+            # A bare `[ ... ] && ...` would return non-zero on the earlier
+            # attempts, and GitHub runs these blocks under `bash -e`.
+            if [ "$attempt" = 3 ]; then
+              echo "::error::apt failed three times"
+              exit 1
+            fi
+            sleep 10
+          done
 
       # --user throughout: no root, and the runtime cache is a plain directory.
       - name: Add flathub

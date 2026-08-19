@@ -38,12 +38,22 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libxkbcommon-dev libwayland-dev libxcb1-dev \
-            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev \
-            libdbus-1-dev pkg-config \
-            libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+          # A hung Ubuntu mirror otherwise blocks this step until the job
+          # times out hours later; it has cost this repository two ~40 minute
+          # runs. Each attempt is killed rather than waited on, and retried.
+          apt() {
+            for attempt in 1 2 3; do
+              if timeout 180 sudo apt-get update \
+                && timeout 420 sudo apt-get install -y "$@"; then
+                return 0
+              fi
+              echo "::warning::apt attempt $attempt failed or hung; retrying"
+              sleep 10
+            done
+            echo "::error::apt failed three times"
+            return 1
+          }
+          apt libxkbcommon-dev libwayland-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
 
       - name: Format
         run: cargo fmt --all -- --check
@@ -73,9 +83,22 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Install Linux dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y libxkbcommon-dev libwayland-dev libxcb1-dev \
-            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config
+          # A hung Ubuntu mirror otherwise blocks this step until the job
+          # times out hours later; it has cost this repository two ~40 minute
+          # runs. Each attempt is killed rather than waited on, and retried.
+          apt() {
+            for attempt in 1 2 3; do
+              if timeout 180 sudo apt-get update \
+                && timeout 420 sudo apt-get install -y "$@"; then
+                return 0
+              fi
+              echo "::warning::apt attempt $attempt failed or hung; retrying"
+              sleep 10
+            done
+            echo "::error::apt failed three times"
+            return 1
+          }
+          apt libxkbcommon-dev libwayland-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config
       # Clippy, not just check: several lints only fire on the code behind a
       # platform `cfg`, so a host-only clippy run cannot see them. The first
       # CI run failed on exactly this.
@@ -125,12 +148,22 @@ jobs:
       - name: Install Linux dependencies
         if: runner.os == 'Linux'
         run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libxkbcommon-dev libwayland-dev libxcb1-dev \
-            libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev \
-            libdbus-1-dev pkg-config \
-            libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
+          # A hung Ubuntu mirror otherwise blocks this step until the job
+          # times out hours later; it has cost this repository two ~40 minute
+          # runs. Each attempt is killed rather than waited on, and retried.
+          apt() {
+            for attempt in 1 2 3; do
+              if timeout 180 sudo apt-get update \
+                && timeout 420 sudo apt-get install -y "$@"; then
+                return 0
+              fi
+              echo "::warning::apt attempt $attempt failed or hung; retrying"
+              sleep 10
+            done
+            echo "::error::apt failed three times"
+            return 1
+          }
+          apt libxkbcommon-dev libwayland-dev libxcb1-dev libxcb-randr0-dev libxcb-shm0-dev libxcb-xfixes0-dev libdbus-1-dev pkg-config libgtk-3-dev libayatana-appindicator3-dev libxdo-dev
 
       - name: Build
         run: cargo build --release -p bettershot --features tray
