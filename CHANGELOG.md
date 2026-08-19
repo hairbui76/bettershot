@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.6.1](https://github.com/hairbui76/bettershot/compare/v0.6.0...v0.6.1) (2026-08-19)
+
+
+### Bug Fixes
+
+* **daemon:** only announce the daemon once it is actually starting ([f9d4ede](https://github.com/hairbui76/bettershot/commit/f9d4edef48fbe103d096db245ff654820896ecaf))
+* **daemon:** say out loud whether the hotkeys registered ([0472ac9](https://github.com/hairbui76/bettershot/commit/0472ac9337e065a89d3d364596a44456870676e6))
+
 ## [0.6.0](https://github.com/hairbui76/bettershot/compare/v0.5.0...v0.6.0) (2026-08-17)
 
 
