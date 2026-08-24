@@ -326,26 +326,23 @@ mod tray {
 
     /// A simple camera-shutter glyph, generated rather than shipped as a file
     /// so the binary stays self-contained.
+    /// The tray icon, decoded from the shipped logo.
+    ///
+    /// Embedded rather than loaded from disk: the tray has to work for a
+    /// portable build run straight out of a zip, where there is no installed
+    /// icon theme to look in.
+    ///
+    /// 32px is the source. A tray is 16px on a standard Windows DPI and 24-32
+    /// scaled up, and downscaling a 32 costs nothing next to upscaling a 16
+    /// into a blur on a HiDPI panel.
     fn icon() -> Result<tray_icon::Icon, String> {
-        const SIZE: u32 = 32;
-        let mut rgba = Vec::with_capacity((SIZE * SIZE * 4) as usize);
-        let centre = (SIZE as f32 - 1.0) / 2.0;
-        for y in 0..SIZE {
-            for x in 0..SIZE {
-                let (dx, dy) = (x as f32 - centre, y as f32 - centre);
-                let distance = (dx * dx + dy * dy).sqrt();
-                // A filled ring: opaque body, transparent outside and centre.
-                let inside = distance <= 13.0;
-                let lens = distance <= 6.0;
-                let (r, g, b, a) = match (inside, lens) {
-                    (true, true) => (30, 30, 34, 255),
-                    (true, false) => (235, 235, 240, 255),
-                    _ => (0, 0, 0, 0),
-                };
-                rgba.extend_from_slice(&[r, g, b, a]);
-            }
-        }
-        tray_icon::Icon::from_rgba(rgba, SIZE, SIZE).map_err(|e| e.to_string())
+        const PNG: &[u8] = include_bytes!("../../../assets/icons/bettershot-32.png");
+
+        let decoded = image::load_from_memory(PNG)
+            .map_err(|e| format!("the embedded tray icon will not decode: {e}"))?
+            .to_rgba8();
+        let (width, height) = decoded.dimensions();
+        tray_icon::Icon::from_rgba(decoded.into_raw(), width, height).map_err(|e| e.to_string())
     }
 }
 

@@ -1,32 +1,81 @@
+<div align="center">
+
+<img src="assets/icons/bettershot-128.png" alt="" width="112" height="112">
+
 # bettershot
 
-**Modern cross-platform screenshot capture and annotation.**
+**Capture the screen. Mark it up. Move on.**
 
-bettershot grabs a screenshot and lets you mark it up — arrows, boxes, text,
-numbered steps, highlights, blur — then copies it to the clipboard or saves it
-to a file. It runs on **Linux** and **Windows**.
+A fast, cross-platform screenshot and annotation tool that takes the screenshot
+*itself* — no external grabber, no shell pipeline, one binary and one hotkey.
 
-**macOS support is written but unproven**: the whole program — including a
-ScreenCaptureKit capture backend and its permission flow — compiles and passes
-clippy for `aarch64-apple-darwin`, but nothing has ever been run on a Mac. See
-[ROADMAP.md](ROADMAP.md) before relying on it.
+[![CI](https://github.com/hairbui76/bettershot/actions/workflows/ci.yml/badge.svg)](https://github.com/hairbui76/bettershot/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/hairbui76/bettershot?include_prereleases&sort=semver)](https://github.com/hairbui76/bettershot/releases)
+[![Licence: MPL-2.0](https://img.shields.io/badge/licence-MPL--2.0-blue)](LICENSE)
 
-> Status: in development, but building and testing green on real Linux, Windows
-> and macOS runners. See [ROADMAP.md](ROADMAP.md) for what works today and what
-> is written but still unproven.
+[Install](#install) · [Usage](#usage) · [Configuration](#configuration) · [Building](#building) · [Docs](#documentation)
 
-## Installing
+</div>
 
-Every release attaches a portable archive for Linux, Windows and macOS, plus a
-**Windows installer** (`bettershot-<version>-x64-unsigned.msi`).
+---
 
-> The installer is **not code-signed**, which the file name says out loud.
-> Windows SmartScreen will warn on first run — *More info → Run anyway*. Signing
-> needs an Authenticode certificate this project does not have yet.
+## What it does
+
+Press a key. The screen freezes, a capture bar appears, you pick a region, a
+window or a monitor — then annotate it and send it to the clipboard or a file.
+
+|  |  |
+| --- | --- |
+| **Capture** | Region, window, monitor or the whole desktop. Snap to window edges, delay for menus, optionally include the pointer. |
+| **Annotate** | Arrows, lines, boxes, ellipses, freehand, text, numbered steps, highlight, and blur or pixelate for redaction. |
+| **Finish** | Clipboard or file, with strftime-templated names. Crop, undo and redo throughout. |
+| **Stay out of the way** | Runs in the background behind a global hotkey, with a tray icon. The editor floats above other windows, like the Snipping Tool. |
+
+**Redaction is real.** Blur and pixelate always sample the *original*
+screenshot, and the on-screen preview and the exported file come out of the
+same code path — so what looks hidden is hidden in the file. Asserted
+byte-for-byte by tests.
+
+## Platform support
+
+| Platform | Status |
+| --- | --- |
+| **Windows 10 1903+** | Supported. Windows Graphics Capture, installer, global hotkeys, tray. |
+| **Linux — Wayland** | Supported via `xdg-desktop-portal`. Global hotkeys are impossible on Wayland by design; bind your compositor instead. |
+| **Linux — X11** | Supported. Direct grab, global hotkeys, cursor capture. |
+| **macOS 14+** | **Written but never run.** Compiles and passes clippy for `aarch64-apple-darwin`, including the ScreenCaptureKit backend, but no one has executed it on a Mac. See [ROADMAP.md](ROADMAP.md). |
+
+> **Pre-1.0.** Builds are green on real Linux, Windows and macOS runners and the
+> test suite is thorough, but releases are marked pre-release and the binaries
+> are unsigned. See [ROADMAP.md](ROADMAP.md) for what is proven and what is not.
+
+## Install
+
+### Windows
+
+Download the installer from the [latest release][releases]:
+`bettershot-<version>-x64-unsigned.msi`.
+
+It installs to your user profile (no admin needed), adds Start-menu shortcuts,
+and — unless you untick it on the feature page — **starts bettershot in the
+background at login**, so the hotkey is live before you need it.
+
+> The installer is **not code-signed**. SmartScreen will warn on first run:
+> *More info → Run anyway*. Signing needs an Authenticode certificate this
+> project does not have yet.
+
+### Linux
+
+Portable archive from the [latest release][releases], or build from source. See
+[docs/platform-setup.md](docs/platform-setup.md) for per-distribution
+dependencies. Flatpak and AUR packaging is written and builds in CI, but is not
+yet published to Flathub or the AUR.
+
+[releases]: https://github.com/hairbui76/bettershot/releases
 
 ## Why another one
 
-It is heavily inspired by [Satty](https://github.com/Satty-org/Satty), whose
+Heavily inspired by [Satty](https://github.com/Satty-org/Satty), whose
 annotation UX is excellent — a small, obvious toolset with no menus to hunt
 through. Two things are different here:
 
@@ -61,6 +110,20 @@ bettershot --daemon
 # Drop-in for a Satty-style pipeline
 grim -g "$(slurp)" - | bettershot --filename -
 ```
+
+### First run
+
+```sh
+bettershot --daemon
+```
+
+That is the arrangement most people want: nothing on screen until you press the
+key. It shows a tray icon, and tells you at startup which hotkeys are live —
+a background app with no window has nowhere else to say so.
+
+On Windows the installer sets this up at login for you.
+
+### The capture bar
 
 While the selection overlay is up, a floating bar at the top switches what a
 click selects — **Region**, **Window** or **Monitor** — plus **Full screen** to

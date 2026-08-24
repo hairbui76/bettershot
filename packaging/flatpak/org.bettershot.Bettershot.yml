@@ -84,8 +84,10 @@ modules:
         /app/share/applications/org.bettershot.Bettershot.desktop
       - install -Dm644 assets/org.bettershot.Bettershot.metainfo.xml
         /app/share/metainfo/org.bettershot.Bettershot.metainfo.xml
-      - install -Dm644 assets/bettershot.svg
-        /app/share/icons/hicolor/scalable/apps/org.bettershot.Bettershot.svg
+      - for size in 16 24 32 48 64 128 256 512; do install -Dm644
+        "assets/icons/bettershot-$size.png"
+        "/app/share/icons/hicolor/${size}x${size}/apps/org.bettershot.Bettershot.png";
+        done
     sources:
       - type: dir
         path: ../..

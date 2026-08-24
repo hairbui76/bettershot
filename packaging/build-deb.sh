@@ -27,7 +27,6 @@ fi
 
 rm -rf "$PKG"
 mkdir -p "$PKG"/{DEBIAN,usr/bin,usr/share/applications,usr/share/metainfo}
-mkdir -p "$PKG/usr/share/icons/hicolor/scalable/apps"
 mkdir -p "$PKG/usr/share/doc/bettershot"
 
 install -Dm755 "$BIN" "$PKG/usr/bin/bettershot"
@@ -35,8 +34,10 @@ install -Dm644 assets/org.bettershot.Bettershot.desktop \
   "$PKG/usr/share/applications/org.bettershot.Bettershot.desktop"
 install -Dm644 assets/org.bettershot.Bettershot.metainfo.xml \
   "$PKG/usr/share/metainfo/org.bettershot.Bettershot.metainfo.xml"
-install -Dm644 assets/bettershot.svg \
-  "$PKG/usr/share/icons/hicolor/scalable/apps/org.bettershot.Bettershot.svg"
+for size in 16 24 32 48 64 128 256 512; do
+  install -Dm644 "assets/icons/bettershot-$size.png" \
+    "$PKG/usr/share/icons/hicolor/${size}x${size}/apps/org.bettershot.Bettershot.png"
+done
 install -Dm644 LICENSE "$PKG/usr/share/doc/bettershot/copyright"
 
 # The manpage and completions are generated into OUT_DIR by build.rs.

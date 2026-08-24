@@ -44,6 +44,12 @@
     <MajorUpgrade DowngradeErrorMessage="A newer version of bettershot is already installed." />
     <MediaTemplate EmbedCab="yes" />
 
+    <!-- Shown against the shortcuts and in Installed Apps. Without it Windows
+         falls back to a generic box, which is the first thing a user sees. -->
+    <Icon Id="BettershotIcon" SourceFile="assets\bettershot.ico" />
+    <Property Id="ARPPRODUCTICON" Value="BettershotIcon" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/hairbui76/bettershot" />
+
     <!-- Windows Graphics Capture needs Windows 10 1903 or later. -->
     <Launch Condition="Installed OR VersionNT >= 603"
             Message="bettershot requires Windows 10 version 1903 or later." />
@@ -77,12 +83,14 @@
                   Description="Capture a region and annotate it"
                   Target="[INSTALLFOLDER]bettershot.exe"
                   Arguments="--capture region"
+                  Icon="BettershotIcon"
                   WorkingDirectory="INSTALLFOLDER" />
         <Shortcut Id="RunResident"
                   Name="bettershot (stay resident)"
                   Description="Run in the tray with global hotkeys"
                   Target="[INSTALLFOLDER]bettershot.exe"
                   Arguments="--daemon"
+                  Icon="BettershotIcon"
                   WorkingDirectory="INSTALLFOLDER" />
         <RemoveFolder Id="RemoveShortcutFolder" On="uninstall" />
         <RegistryValue Root="HKCU"
@@ -94,12 +102,44 @@
       </Component>
     </ComponentGroup>
 
+    <!-- A capture tool is only useful if it is already running when you want
+         it: the hotkey has to be live *before* the thing you want to capture
+         is on screen. So the daemon starts at login, in the background, with
+         the tray icon as its only presence.
+
+         A per-user Run value rather than a service or a Startup-folder
+         shortcut: it needs no elevation, it is where users look for
+         auto-starting apps (Task Manager's Startup tab lists it and can
+         disable it), and Windows removes it with the product.
+
+         Its own feature so it can be declined on the installer's feature page
+         (which is why this uses WixUI_FeatureTree and not WixUI_Minimal, whose
+         two-click flow has nowhere to offer the choice), or turned off later
+         from Installed Apps > Modify. -->
+    <ComponentGroup Id="Autostart" Directory="INSTALLFOLDER">
+      <Component Id="RunAtLogin" Guid="*">
+        <RegistryValue Root="HKCU"
+                       Key="Software\Microsoft\Windows\CurrentVersion\Run"
+                       Name="bettershot"
+                       Type="string"
+                       Value="&quot;[INSTALLFOLDER]bettershot.exe&quot; --daemon"
+                       KeyPath="yes" />
+      </Component>
+    </ComponentGroup>
+
     <Feature Id="Main" Title="bettershot" Level="1">
       <ComponentGroupRef Id="ProductComponents" />
       <ComponentGroupRef Id="Shortcuts" />
+
+      <Feature Id="AutostartFeature"
+               Title="Start in the background at login"
+               Description="Keeps bettershot resident so its global hotkey works straight away. Shows a tray icon."
+               Level="1">
+        <ComponentGroupRef Id="Autostart" />
+      </Feature>
     </Feature>
 
-    <ui:WixUI Id="WixUI_Minimal" />
+    <ui:WixUI Id="WixUI_FeatureTree" />
     <WixVariable Id="WixUILicenseRtf" Value="packaging\windows\license.rtf" />
   </Package>
 </Wix>

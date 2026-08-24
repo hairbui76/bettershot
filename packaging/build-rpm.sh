@@ -31,7 +31,6 @@ mkdir -p "$TOP"/{BUILD,RPMS,SOURCES,SPECS,SRPMS} "$OUT"
 # script honest about what it is: a packaging step, not a build system.
 STAGE="$TOP/stage"
 mkdir -p "$STAGE"/usr/{bin,share/{applications,metainfo,man/man1}}
-mkdir -p "$STAGE/usr/share/icons/hicolor/scalable/apps"
 mkdir -p "$STAGE/usr/share/licenses/bettershot"
 
 install -Dm755 "$BIN" "$STAGE/usr/bin/bettershot"
@@ -39,8 +38,10 @@ install -Dm644 assets/org.bettershot.Bettershot.desktop \
   "$STAGE/usr/share/applications/org.bettershot.Bettershot.desktop"
 install -Dm644 assets/org.bettershot.Bettershot.metainfo.xml \
   "$STAGE/usr/share/metainfo/org.bettershot.Bettershot.metainfo.xml"
-install -Dm644 assets/bettershot.svg \
-  "$STAGE/usr/share/icons/hicolor/scalable/apps/org.bettershot.Bettershot.svg"
+for size in 16 24 32 48 64 128 256 512; do
+  install -Dm644 "assets/icons/bettershot-$size.png" \
+    "$STAGE/usr/share/icons/hicolor/${size}x${size}/apps/org.bettershot.Bettershot.png"
+done
 install -Dm644 LICENSE "$STAGE/usr/share/licenses/bettershot/LICENSE"
 
 # Several build directories can exist at once (different feature sets, or a
@@ -97,7 +98,7 @@ cp -a usr %{buildroot}/
 /usr/bin/bettershot
 /usr/share/applications/org.bettershot.Bettershot.desktop
 /usr/share/metainfo/org.bettershot.Bettershot.metainfo.xml
-/usr/share/icons/hicolor/scalable/apps/org.bettershot.Bettershot.svg
+/usr/share/icons/hicolor/*/apps/org.bettershot.Bettershot.png
 %{_mandir}/man1/bettershot.1*
 
 %changelog

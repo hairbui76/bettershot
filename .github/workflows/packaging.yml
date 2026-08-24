@@ -116,7 +116,7 @@ jobs:
           for f in usr/bin/bettershot \
                    usr/share/applications/org.bettershot.Bettershot.desktop \
                    usr/share/metainfo/org.bettershot.Bettershot.metainfo.xml \
-                   usr/share/icons/hicolor/scalable/apps/org.bettershot.Bettershot.svg \
+                   usr/share/icons/hicolor/128x128/apps/org.bettershot.Bettershot.png \
                    usr/share/licenses/bettershot/LICENSE; do
             tar --use-compress-program=unzstd -tf "$pkg" | grep -qx "$f" \
               || { echo "MISSING from the package: $f"; exit 1; }
@@ -163,13 +163,12 @@ jobs:
           mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
           cp packaging/macos/Info.plist "$app/Contents/"
           cp target/release/bettershot "$app/Contents/MacOS/bettershot"
-          # CFBundleIconFile names bettershot.icns; the repository has an SVG,
-          # so convert rather than ship a bundle whose icon key dangles.
+          # CFBundleIconFile names bettershot.icns, so build one from the
+          # shipped PNGs rather than ship a bundle whose icon key dangles.
           mkdir -p /tmp/bettershot.iconset
           for size in 16 32 64 128 256 512; do
-            sips -s format png --resampleHeightWidth $size $size \
-              assets/bettershot.svg --out "/tmp/bettershot.iconset/icon_${size}x${size}.png" \
-              >/dev/null
+            cp "assets/icons/bettershot-$size.png" \
+              "/tmp/bettershot.iconset/icon_${size}x${size}.png"
           done
           iconutil -c icns /tmp/bettershot.iconset \
             -o "$app/Contents/Resources/bettershot.icns"
