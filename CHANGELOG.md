@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.0](https://github.com/hairbui76/bettershot/compare/v0.7.0...v0.8.0) (2026-08-24)
+
+
+### Features
+
+* adopt the real logo, and install to run in the background ([85e8259](https://github.com/hairbui76/bettershot/commit/85e82594400cc869d2ca9a322d97014fb57a9b92))
+
 ## [0.7.0](https://github.com/hairbui76/bettershot/compare/v0.6.1...v0.7.0) (2026-08-24)
 
 
