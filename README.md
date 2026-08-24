@@ -15,6 +15,15 @@ clippy for `aarch64-apple-darwin`, but nothing has ever been run on a Mac. See
 > and macOS runners. See [ROADMAP.md](ROADMAP.md) for what works today and what
 > is written but still unproven.
 
+## Installing
+
+Every release attaches a portable archive for Linux, Windows and macOS, plus a
+**Windows installer** (`bettershot-<version>-x64-unsigned.msi`).
+
+> The installer is **not code-signed**, which the file name says out loud.
+> Windows SmartScreen will warn on first run — *More info → Run anyway*. Signing
+> needs an Authenticode certificate this project does not have yet.
+
 ## Why another one
 
 It is heavily inspired by [Satty](https://github.com/Satty-org/Satty), whose
@@ -138,6 +147,14 @@ not running.
 > and the startup notification will say so. Either free the key up under
 > *Settings → Accessibility → Keyboard*, or give bettershot a different one
 > below.
+
+While it is running you get a **tray icon** in the notification area, whose
+menu starts a capture, opens Settings or quits — so there is always something
+on screen saying it is alive, even when no hotkey is registered.
+
+Hotkeys can be edited in **Settings → Hotkeys** rather than by hand, and are
+re-registered as soon as you change them; you do not have to restart to find
+out whether the key you picked was already taken.
 
 Configure it with:
 

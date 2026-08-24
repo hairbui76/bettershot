@@ -466,7 +466,20 @@ impl eframe::App for BettershotApp {
                 // changed in its settings window has to be taken back or the
                 // next capture in daemon mode silently reverts it.
                 if let Some(updated) = editor.take_config_change() {
+                    // Re-grab the keys when the bindings change, rather than
+                    // making the user restart to find out whether the one they
+                    // just typed works. Replacing the old `Hotkeys` releases
+                    // its grabs on drop, so the previous key stops being held.
+                    let rebind = updated.daemon.hotkeys != self.config.daemon.hotkeys;
                     self.config = updated;
+                    // Disjoint fields: `self.stage` is already borrowed by the
+                    // match above, so this takes the two fields it needs
+                    // rather than `&mut self`.
+                    if rebind {
+                        if let Some(daemon) = self.daemon.as_mut() {
+                            rebind_hotkeys(daemon, &self.config);
+                        }
+                    }
                 }
                 if pending == Some(Trigger::Quit) {
                     self.stage = Stage::Done;
@@ -498,6 +511,37 @@ impl eframe::App for BettershotApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
         }
     }
+}
+
+/// Re-register the global hotkeys after the user edited them.
+///
+/// Takes the two fields it needs rather than `&mut self`, because the caller is
+/// inside a `match &mut self.stage` and the borrow checker rightly refuses a
+/// second whole-`self` borrow.
+///
+/// Reports the outcome the way startup does: "did that key take?" is exactly as
+/// invisible here as it is at launch, and the user has just typed something
+/// another application may well already hold.
+fn rebind_hotkeys(daemon: &mut Daemon, config: &Config) {
+    let hotkeys = Hotkeys::register(&config.daemon);
+    log::info!("rebound hotkeys: {}", hotkeys.summary());
+
+    let (_, body) = hotkeys.announcement();
+    let failures = hotkeys.failures().to_vec();
+    let title = if failures.is_empty() {
+        "Hotkeys updated"
+    } else {
+        "A hotkey could not be registered"
+    };
+
+    // Assigning drops the previous set, and its `Drop` releases the old grabs —
+    // otherwise the key the user just replaced would stay held for the rest of
+    // the session and reach nothing.
+    daemon.hotkeys = hotkeys;
+    daemon.warnings = failures;
+    daemon.warned = false;
+
+    crate::notify::notify(config, title, &body);
 }
 
 #[cfg(test)]

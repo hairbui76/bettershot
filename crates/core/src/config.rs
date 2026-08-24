@@ -1136,6 +1136,90 @@ mod tests {
 }
 
 #[cfg(test)]
+mod hotkey_editing_tests {
+    use super::*;
+
+    fn config_with(keys: &[(&str, CaptureMode)]) -> DaemonConfig {
+        DaemonConfig {
+            enabled: true,
+            tray: true,
+            hotkeys: keys
+                .iter()
+                .map(|(k, m)| HotkeyBinding::new(*k, *m))
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_blank_key_is_rejected_with_a_reason() {
+        // The settings window adds an empty binding when you click "Add", so
+        // this is the state the user is in *while* typing, not a corner case.
+        let err = config_with(&[("", CaptureMode::Region)])
+            .validate()
+            .unwrap_err()
+            .to_string();
+        assert!(err.contains("empty"), "{err}");
+    }
+
+    #[test]
+    fn binding_the_same_key_twice_is_rejected_and_names_it() {
+        let err = config_with(&[
+            ("Ctrl+Shift+S", CaptureMode::Region),
+            ("Ctrl+Shift+S", CaptureMode::Window),
+        ])
+        .validate()
+        .unwrap_err()
+        .to_string();
+        assert!(err.contains("Ctrl+Shift+S"), "{err}");
+        assert!(err.contains("more than once"), "{err}");
+    }
+
+    #[test]
+    fn the_same_key_with_stray_whitespace_still_counts_as_a_duplicate() {
+        // Typed into a text box, so trailing spaces are entirely likely, and
+        // two bindings that look identical must not both appear to be fine.
+        assert!(
+            config_with(&[
+                ("PrintScreen", CaptureMode::Region),
+                ("  PrintScreen ", CaptureMode::Window),
+            ])
+            .validate()
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn distinct_bindings_and_an_empty_list_are_both_fine() {
+        assert!(
+            config_with(&[
+                ("PrintScreen", CaptureMode::Region),
+                ("Shift+PrintScreen", CaptureMode::Window),
+            ])
+            .validate()
+            .is_ok()
+        );
+        // Removing the last one is a legitimate state: the tray still works.
+        assert!(config_with(&[]).validate().is_ok());
+    }
+
+    #[test]
+    fn edited_hotkeys_survive_a_round_trip_through_the_config_file() {
+        // The settings window writes the config back out; a binding that does
+        // not round-trip reverts the moment the file is reloaded.
+        let mut config = Config::default();
+        config.daemon.hotkeys = vec![HotkeyBinding::new("Ctrl+Alt+4", CaptureMode::Monitor)];
+        config.daemon.tray = false;
+
+        let written = toml::to_string(&config.to_file()).unwrap();
+        let mut reloaded = Config::default();
+        reloaded.merge_toml(&written).unwrap();
+
+        assert_eq!(reloaded.daemon.hotkeys, config.daemon.hotkeys, "{written}");
+        assert!(!reloaded.daemon.tray);
+    }
+}
+
+#[cfg(test)]
 mod always_on_top_tests {
     use super::*;
 

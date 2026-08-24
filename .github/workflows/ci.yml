@@ -220,20 +220,34 @@ jobs:
       - name: Build the MSI
         shell: pwsh
         run: |
+          $ErrorActionPreference = 'Stop'
+          # Read the real version rather than hardcoding one: a fixed 0.1.0 kept
+          # passing while the workspace moved on, so this job stopped proving
+          # anything about the installer a release would actually produce.
+          # -List stops at the first hit: only [workspace.package] has a line
+          # starting with `version =`, but a bare Select-String returns an array
+          # if that ever stops being true, and indexing it would break oddly.
+          $match = Select-String -Path Cargo.toml -Pattern '^version = "(.+?)"' -List
+          if (-not $match) { throw "no [workspace.package] version in Cargo.toml" }
+          $version = $match.Matches[0].Groups[1].Value
+          Write-Host "building the installer for $version"
+          $msi = "bettershot-$version-x64.msi"
           wix build packaging/windows/bettershot.wxs `
             -arch x64 `
             -ext WixToolset.UI.wixext `
-            -d Version=0.1.0 `
+            -d Version=$version `
             -d BinDir=target/release `
-            -o bettershot-0.1.0-x64.msi
-          if (-not (Test-Path bettershot-0.1.0-x64.msi)) {
+            -o $msi
+          if (-not (Test-Path $msi)) {
             throw "wix reported success but produced no MSI"
           }
-          Get-Item bettershot-0.1.0-x64.msi |
+          # $env:MSI would still be empty here: GITHUB_ENV only reaches later
+          # steps, never the one that writes it.
+          Get-Item $msi |
             Select-Object Name, @{n = 'KB'; e = { [int]($_.Length / 1KB) } }
 
       - uses: actions/upload-artifact@v5
         with:
           name: bettershot-msi-unsigned
-          path: bettershot-0.1.0-x64.msi
+          path: bettershot-*.msi
           if-no-files-found: error

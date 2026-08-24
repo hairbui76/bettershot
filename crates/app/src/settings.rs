@@ -58,6 +58,8 @@ impl SettingsWindow {
                     ui.separator();
                     changed |= self.capture(ui, config);
                     ui.separator();
+                    changed |= self.hotkeys(ui, config);
+                    ui.separator();
                     changed |= self.privacy(ui, config, history);
                     ui.separator();
                     self.persist(ui, config);
@@ -258,6 +260,81 @@ impl SettingsWindow {
             }
         });
         ui.small("Leave empty to use the system clipboard; e.g. wl-copy on Wayland.");
+
+        changed
+    }
+
+    /// Editing the global hotkeys.
+    ///
+    /// Previously the only way to change one was to find the config file and
+    /// edit TOML — which the daemon's own "that key is taken, pick another"
+    /// advice was asking people to do with no way to do it.
+    fn hotkeys(&mut self, ui: &mut egui::Ui, config: &mut Config) -> bool {
+        let mut changed = false;
+        ui.heading("Hotkeys");
+        ui.small(
+            "Global shortcuts that start a capture while bettershot is running \
+             in the background (--daemon).",
+        );
+
+        let mut remove: Option<usize> = None;
+        for (index, binding) in config.daemon.hotkeys.iter_mut().enumerate() {
+            ui.horizontal(|ui| {
+                changed |= ui
+                    .add(
+                        egui::TextEdit::singleline(&mut binding.key)
+                            .desired_width(160.0)
+                            .hint_text("Ctrl+Shift+S"),
+                    )
+                    .on_hover_text(
+                        "A combination such as `PrintScreen` or \
+                         `Ctrl+Shift+S`. Modifiers: Ctrl, Shift, Alt, Super.",
+                    )
+                    .changed();
+
+                egui::ComboBox::from_id_salt(("hotkey-mode", index))
+                    .selected_text(binding.mode.name())
+                    .show_ui(ui, |ui| {
+                        for mode in CaptureMode::ALL {
+                            changed |= ui
+                                .selectable_value(&mut binding.mode, mode, mode.name())
+                                .changed();
+                        }
+                    });
+
+                if ui.button("Remove").clicked() {
+                    remove = Some(index);
+                }
+            });
+        }
+
+        if let Some(index) = remove {
+            config.daemon.hotkeys.remove(index);
+            changed = true;
+        }
+
+        ui.horizontal(|ui| {
+            if ui.button("Add a hotkey").clicked() {
+                config
+                    .daemon
+                    .hotkeys
+                    .push(bettershot_core::config::HotkeyBinding::new(
+                        String::new(),
+                        CaptureMode::Region,
+                    ));
+                changed = true;
+            }
+            changed |= ui
+                .checkbox(&mut config.daemon.tray, "Show a tray icon while running")
+                .changed();
+        });
+
+        // Say what is wrong rather than letting it fail silently at the next
+        // launch. An empty or duplicated key is rejected before the platform
+        // layer ever sees it.
+        if let Err(e) = config.daemon.validate() {
+            ui.colored_label(egui::Color32::from_rgb(235, 77, 75), e.to_string());
+        }
 
         changed
     }

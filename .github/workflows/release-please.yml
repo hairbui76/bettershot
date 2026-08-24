@@ -170,6 +170,40 @@ jobs:
           # then fails on a file that was never going to exist.
           echo "ARCHIVE=$staging.${{ matrix.archive }}" >> "$GITHUB_ENV"
 
+      # Windows users expect an installer, not a zip to unpack by hand. Built
+      # here rather than reusing CI's `msi` job because a tag pushed with the
+      # default GITHUB_TOKEN cannot trigger another workflow, so nothing else
+      # runs for a release cut from here.
+      #
+      # It is NOT signed. SmartScreen will warn on first run, and the file name
+      # says so rather than letting someone discover it at the prompt. Signing
+      # needs an Authenticode certificate this repository does not hold.
+      - name: Build the installer
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          TAG: ${{ needs.release-please.outputs.tag_name }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:TAG -replace '^v', ''
+          # WiX v4 is a dotnet global tool; the extension version must match the
+          # tool's or the build fails with WIX0144.
+          dotnet tool install --global wix --version 4.0.6
+          if ($LASTEXITCODE -ne 0) { throw "installing wix failed" }
+          wix extension add -g "WixToolset.UI.wixext/4.0.6"
+          if ($LASTEXITCODE -ne 0) { throw "adding the UI extension failed" }
+
+          $msi = "bettershot-$version-x64-unsigned.msi"
+          wix build packaging/windows/bettershot.wxs `
+            -arch x64 `
+            -ext WixToolset.UI.wixext `
+            -d Version=$version `
+            -d BinDir=target/${{ matrix.target }}/release `
+            -o $msi
+          if (-not (Test-Path $msi)) { throw "wix reported success but produced no MSI" }
+          "MSI=$msi" | Out-File -FilePath $env:GITHUB_ENV -Append
+          Get-Item $msi | Select-Object Name, @{n='KB'; e={[int]($_.Length / 1KB)}}
+
       - name: Attach to the release
         shell: bash
         env:
@@ -180,3 +214,7 @@ jobs:
           test -n "$TAG" || { echo "no tag name from release-please"; exit 1; }
           test -f "$ARCHIVE" || { echo "the archive $ARCHIVE was not built"; exit 1; }
           gh release upload "$TAG" "$ARCHIVE" --clobber
+          # Only Windows produces one, and only if the step above ran.
+          if [ -n "${MSI:-}" ] && [ -f "$MSI" ]; then
+            gh release upload "$TAG" "$MSI" --clobber
+          fi
