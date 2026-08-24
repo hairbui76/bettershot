@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.7.0](https://github.com/hairbui76/bettershot/compare/v0.6.1...v0.7.0) (2026-08-24)
+
+
+### Features
+
+* ship a Windows installer, and let hotkeys be set from Settings ([043a465](https://github.com/hairbui76/bettershot/commit/043a46535da32d604c9dabdfb3c326dceb6fa444))
+
 ## [0.6.1](https://github.com/hairbui76/bettershot/compare/v0.6.0...v0.6.1) (2026-08-19)
 
 
