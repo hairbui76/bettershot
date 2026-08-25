@@ -185,7 +185,16 @@ fn run(app: BettershotApp) -> Result<()> {
     eframe::run_native(
         "bettershot",
         options,
-        Box::new(move |_cc| Ok(Box::new(app))),
+        // Inside the creation callback, not before `run_native`: the event loop
+        // exists by the time this runs, which is what `global-hotkey` and
+        // `tray-icon` both require on Windows.
+        Box::new(move |_cc| {
+            let mut app = app;
+            if !app.start_daemon() {
+                return Err("nothing could start a capture; see the notification".into());
+            }
+            Ok(Box::new(app) as Box<dyn eframe::App>)
+        }),
     )
     .map_err(|e| anyhow::anyhow!("could not start the window: {e}"))
 }

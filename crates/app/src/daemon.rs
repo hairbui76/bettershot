@@ -57,6 +57,20 @@ const REBIND_ADVICE: &str = "Pick a different key under [daemon] hotkeys in the 
 const REBIND_ADVICE: &str = "Bind your compositor to `bettershot --capture region` \
      instead, or pick a different key under [daemon] hotkeys in the config file.";
 
+/// What happened to the tray icon, so the daemon can say so.
+///
+/// "I cannot see it" has to have an answer other than silence: the tray is the
+/// only always-visible sign that a background app is alive.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TrayState {
+    /// The icon was created.
+    Showing,
+    /// Turned off in the configuration.
+    Disabled,
+    /// Creation failed, with the reason.
+    Failed(String),
+}
+
 /// Registered global hotkeys.
 ///
 /// The manager must outlive the registrations, so it is kept even when every
@@ -76,6 +90,18 @@ pub struct Hotkeys {
 }
 
 impl Hotkeys {
+    /// An unregistered set, for a daemon that has not reached its event loop
+    /// yet. Registering before the loop exists is what broke this on Windows.
+    pub fn none() -> Self {
+        Self {
+            manager: None,
+            bindings: HashMap::new(),
+            registered: Vec::new(),
+            working: Vec::new(),
+            failures: Vec::new(),
+        }
+    }
+
     /// Register every configured binding, keeping whichever succeed.
     pub fn register(config: &DaemonConfig) -> Self {
         let mut bindings = HashMap::new();
@@ -169,7 +195,7 @@ impl Hotkeys {
     /// discarded. Without saying this somewhere the user can see, the failure
     /// mode is "I press the key, nothing happens, and there is nowhere to find
     /// out why".
-    pub fn announcement(&self) -> (String, String) {
+    pub fn announcement(&self, tray: &TrayState) -> (String, String) {
         let mut body = String::new();
         if self.working.is_empty() {
             body.push_str("No global hotkey is active.");
@@ -183,13 +209,33 @@ impl Hotkeys {
             }
             body.push('.');
         }
+        body.push_str("\n\n");
+        match tray {
+            // Windows drops new notification-area icons into the hidden
+            // overflow by default, so "there is no icon" and "the icon is
+            // behind the chevron" look identical to the user. Say which.
+            TrayState::Showing => body.push_str(
+                "Tray icon: shown. Windows hides new icons behind the ^ arrow in \
+                 the notification area until you drag one onto the taskbar.",
+            ),
+            TrayState::Disabled => {
+                body.push_str("Tray icon: turned off in Settings.");
+            }
+            TrayState::Failed(reason) => {
+                body.push_str(&format!("Tray icon: unavailable -- {reason}"));
+            }
+        }
+
         for failure in &self.failures {
             body.push_str("\n\n");
             body.push_str(failure);
         }
 
-        let title = if self.failures.is_empty() {
+        let tray_failed = matches!(tray, TrayState::Failed(_));
+        let title = if self.failures.is_empty() && !tray_failed {
             "bettershot is running".to_owned()
+        } else if tray_failed && self.failures.is_empty() {
+            "bettershot is running, but the tray icon is missing".to_owned()
         } else {
             "bettershot is running, but a hotkey did not register".to_owned()
         };
@@ -383,7 +429,8 @@ mod announcement_tests {
     fn a_working_daemon_says_which_key_to_press() {
         // The whole point: a daemon is invisible, so "it is running" is not
         // enough. The user needs the key.
-        let (title, body) = hotkeys(&[("PrintScreen", CaptureMode::Region)], &[]).announcement();
+        let (title, body) =
+            hotkeys(&[("PrintScreen", CaptureMode::Region)], &[]).announcement(&TrayState::Showing);
         assert_eq!(title, "bettershot is running");
         assert!(body.contains("PrintScreen"), "{body}");
         assert!(body.contains("region"), "{body}");
@@ -393,7 +440,8 @@ mod announcement_tests {
     fn a_failed_binding_is_reported_in_the_title_not_buried() {
         // A notification body may be truncated or collapsed by the desktop, so
         // the fact that something is wrong has to survive in the title.
-        let (title, body) = hotkeys(&[], &["could not register `PrintScreen`"]).announcement();
+        let (title, body) =
+            hotkeys(&[], &["could not register `PrintScreen`"]).announcement(&TrayState::Showing);
         assert!(title.contains("did not register"), "{title}");
         assert!(body.contains("PrintScreen"), "{body}");
         assert!(body.contains("No global hotkey is active"), "{body}");
@@ -405,10 +453,42 @@ mod announcement_tests {
             &[("PrintScreen", CaptureMode::Region)],
             &["could not register `Shift+PrintScreen`"],
         )
-        .announcement();
+        .announcement(&TrayState::Showing);
         assert!(title.contains("did not register"), "{title}");
         assert!(body.contains("PrintScreen for region"), "{body}");
         assert!(body.contains("Shift+PrintScreen"), "{body}");
+    }
+
+    #[test]
+    fn a_missing_tray_icon_is_reported_in_the_title() {
+        // "I cannot see the icon" needs an answer other than silence: the tray
+        // is the only always-visible sign a background app is alive.
+        let (title, body) = hotkeys(&[("PrintScreen", CaptureMode::Region)], &[])
+            .announcement(&TrayState::Failed("no notification area".to_owned()));
+        assert!(title.contains("tray icon is missing"), "{title}");
+        assert!(body.contains("no notification area"), "{body}");
+    }
+
+    #[test]
+    fn a_working_tray_says_where_windows_hides_it() {
+        // A created icon and a hidden one look identical to the user, and
+        // Windows puts new ones in the overflow by default.
+        let (title, body) =
+            hotkeys(&[("PrintScreen", CaptureMode::Region)], &[]).announcement(&TrayState::Showing);
+        assert_eq!(title, "bettershot is running");
+        assert!(body.contains("Tray icon: shown"), "{body}");
+        assert!(
+            body.contains('^'),
+            "it should name the overflow arrow: {body}"
+        );
+    }
+
+    #[test]
+    fn a_tray_turned_off_on_purpose_is_not_an_error() {
+        let (title, body) = hotkeys(&[("PrintScreen", CaptureMode::Region)], &[])
+            .announcement(&TrayState::Disabled);
+        assert_eq!(title, "bettershot is running");
+        assert!(body.contains("turned off"), "{body}");
     }
 
     #[test]

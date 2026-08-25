@@ -215,6 +215,11 @@ While it is running you get a **tray icon** in the notification area, whose
 menu starts a capture, opens Settings or quits — so there is always something
 on screen saying it is alive, even when no hotkey is registered.
 
+> **Windows hides new tray icons.** They go into the overflow behind the `^`
+> arrow next to the clock until you drag one onto the taskbar. If you cannot
+> see bettershot, look there first — the startup notification says whether the
+> icon was actually created.
+
 Hotkeys can be edited in **Settings → Hotkeys** rather than by hand, and are
 re-registered as soon as you change them; you do not have to restart to find
 out whether the key you picked was already taken.

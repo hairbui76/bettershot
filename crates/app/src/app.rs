@@ -22,7 +22,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::capture::Acquired;
-use crate::daemon::{Hotkeys, Tray, Trigger};
+use crate::daemon::{Hotkeys, Tray, TrayState, Trigger};
 use crate::editor::{Editor, Outcome};
 use crate::history::History;
 use crate::overlay::{Overlay, Selection};
@@ -79,6 +79,9 @@ struct Daemon {
     /// Reported once, the first time a window is visible.
     warnings: Vec<String>,
     warned: bool,
+    /// Whether [`BettershotApp::start_daemon`] has run. Registration happens on
+    /// the first frame rather than at construction, so it needs a guard.
+    started: bool,
 }
 
 impl BettershotApp {
@@ -98,69 +101,88 @@ impl BettershotApp {
 
     /// Start resident and hidden, driven by hotkeys and the tray.
     ///
-    /// Fails when nothing could drive it. Staying up in that state means a
-    /// hidden window polling forever with no way to trigger a capture and no
-    /// way to quit short of `kill` — and it is the *normal* case for
-    /// `--daemon` on Wayland in a build without the `tray` feature, so it has
-    /// to be an error the user sees rather than a warning routed through a
-    /// window that will never open.
+    /// Deliberately registers *nothing*: both `global-hotkey` and `tray-icon`
+    /// require a win32 event loop to already be running on the calling thread,
+    /// and this runs before `eframe::run_native` creates one. Registering here
+    /// is why the tray icon never appeared on Windows. See
+    /// [`Self::start_daemon`], which the event loop calls once it exists.
     pub fn idle(config: Config) -> Result<Self, String> {
-        let hotkeys = Hotkeys::register(&config.daemon);
-        let mut warnings: Vec<String> = hotkeys.failures().to_vec();
+        let mut app = Self::with_stage(config, Stage::Idle);
+        app.daemon = Some(Daemon {
+            hotkeys: Hotkeys::none(),
+            tray: None,
+            warnings: Vec::new(),
+            warned: false,
+            started: false,
+        });
+        Ok(app)
+    }
 
-        let tray = if config.daemon.tray {
-            match Tray::new(&config.daemon) {
-                Ok(tray) => Some(tray),
+    /// Register the global hotkeys and create the tray icon.
+    ///
+    /// Called from inside the event loop, because on Windows both of these
+    /// create a hidden message window and need a running win32 loop on the same
+    /// thread; created earlier they fail or silently never deliver an event.
+    /// Idempotent, so the first frame can call it without checking.
+    ///
+    /// Returns false when nothing could drive the daemon, which means it would
+    /// sit invisible forever with no way to start a capture and no way to quit.
+    pub fn start_daemon(&mut self) -> bool {
+        let Some(daemon) = self.daemon.as_mut() else {
+            return true;
+        };
+        if daemon.started {
+            return true;
+        }
+        daemon.started = true;
+
+        daemon.hotkeys = Hotkeys::register(&self.config.daemon);
+        let mut warnings: Vec<String> = daemon.hotkeys.failures().to_vec();
+
+        let tray_state = if !self.config.daemon.tray {
+            TrayState::Disabled
+        } else {
+            match Tray::new(&self.config.daemon) {
+                Ok(tray) => {
+                    daemon.tray = Some(tray);
+                    TrayState::Showing
+                }
                 Err(e) => {
                     warnings.push(format!("the system tray is unavailable: {e}"));
-                    None
+                    TrayState::Failed(e)
                 }
             }
-        } else {
-            None
         };
 
-        log::info!("{}", hotkeys.summary());
+        log::info!("{}", daemon.hotkeys.summary());
         for warning in &warnings {
             log::warn!("{warning}");
         }
 
-        if !hotkeys.is_active() && tray.is_none() {
-            let mut message = String::from(
-                "--daemon has nothing that could start a capture, so it would run \
-                 invisibly forever. ",
-            );
-            for warning in &warnings {
-                message.push_str(warning);
-                message.push_str(". ");
-            }
-            message.push_str(
-                "Bind your compositor to `bettershot --capture region` instead, or \
-                 build with --features tray",
-            );
-            return Err(message);
-        }
-
-        // Only once the daemon is actually going to run. Announcing "bettershot
-        // is running" and then returning an error would be a lie, and it would
-        // also make every test that exercises the refusal path talk to the
-        // notification daemon.
-        let (title, mut body) = hotkeys.announcement();
+        let usable = daemon.hotkeys.is_active() || daemon.tray.is_some();
+        let (title, mut body) = daemon.hotkeys.announcement(&tray_state);
         if !warnings.is_empty() {
             if let Some(path) = bettershot_cli::config_path() {
                 body.push_str(&format!("\n\nConfig file: {}", path.display()));
             }
         }
-        crate::notify::notify(&config, &title, &body);
+        daemon.warnings = warnings;
+        daemon.warned = false;
 
-        let mut app = Self::with_stage(config, Stage::Idle);
-        app.daemon = Some(Daemon {
-            hotkeys,
-            tray,
-            warnings,
-            warned: false,
-        });
-        Ok(app)
+        if !usable {
+            crate::notify::notify(
+                &self.config,
+                "bettershot cannot start",
+                &format!(
+                    "Nothing could start a capture, so it would run invisibly \
+                     forever.\n\n{body}"
+                ),
+            );
+            return false;
+        }
+
+        crate::notify::notify(&self.config, &title, &body);
+        true
     }
 
     fn with_stage(config: Config, stage: Stage) -> Self {
@@ -526,7 +548,14 @@ fn rebind_hotkeys(daemon: &mut Daemon, config: &Config) {
     let hotkeys = Hotkeys::register(&config.daemon);
     log::info!("rebound hotkeys: {}", hotkeys.summary());
 
-    let (_, body) = hotkeys.announcement();
+    let tray = if daemon.tray.is_some() {
+        TrayState::Showing
+    } else if config.daemon.tray {
+        TrayState::Failed("it was not created at startup".to_owned())
+    } else {
+        TrayState::Disabled
+    };
+    let (_, body) = hotkeys.announcement(&tray);
     let failures = hotkeys.failures().to_vec();
     let title = if failures.is_empty() {
         "Hotkeys updated"
@@ -630,14 +659,38 @@ mod tests {
         // 80 ms with no window, no tray and no way to quit — which is the
         // *normal* outcome of `--daemon` on Wayland without the tray feature,
         // because global hotkey registration always fails there.
-        let error = BettershotApp::idle(inert_daemon())
-            .err()
-            .expect("a daemon nothing can drive must not start");
-        assert!(error.contains("invisibly"), "{error}");
+        //
+        // The check lives in `start_daemon` now rather than in `idle`, because
+        // registering anything before the event loop exists is what stopped the
+        // tray icon appearing on Windows. Construction has to succeed so the
+        // event loop can start; it is the first frame that gives up.
+        let mut app = BettershotApp::idle(inert_daemon()).expect("construction should succeed");
         assert!(
-            error.contains("--capture region"),
-            "the error should say what to do instead: {error}"
+            !app.start_daemon(),
+            "a daemon nothing can drive must not carry on"
         );
+    }
+
+    #[test]
+    fn starting_the_daemon_twice_is_harmless() {
+        // It is called from the first frame, so it must be idempotent rather
+        // than re-registering hotkeys on every repaint.
+        let mut app = BettershotApp::idle(inert_daemon()).expect("construction should succeed");
+        assert!(!app.start_daemon());
+        // The second call short-circuits on the guard and reports success,
+        // having already done whatever it was going to do.
+        assert!(app.start_daemon());
+    }
+
+    #[test]
+    fn a_freshly_built_daemon_has_registered_nothing_yet() {
+        // The whole point of the restructure: no hotkey grab and no tray icon
+        // until the event loop exists.
+        let app = BettershotApp::idle(inert_daemon()).expect("construction should succeed");
+        let daemon = app.daemon.as_ref().expect("daemon mode");
+        assert_eq!(daemon.hotkeys.registered_count(), 0);
+        assert!(daemon.tray.is_none());
+        assert!(!daemon.started);
     }
 
     #[test]
