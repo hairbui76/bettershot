@@ -27,6 +27,10 @@ use crate::editor::{Editor, Outcome};
 use crate::history::History;
 use crate::overlay::{Overlay, Selection};
 
+/// How many frames an idle daemon spends re-hiding its window; see
+/// [`BettershotApp::idle_hide_frames`].
+const IDLE_HIDE_FRAMES: u8 = 3;
+
 /// How often the hidden window wakes to check for a hotkey. Frequent enough
 /// that a keypress feels instant, rare enough to stay off the CPU.
 const IDLE_POLL: std::time::Duration = std::time::Duration::from_millis(80);
@@ -71,6 +75,14 @@ pub struct BettershotApp {
     daemon: Option<Daemon>,
     /// Cleared once the startup timing has been reported.
     report_first_frame: bool,
+    /// Frames left on which an idle daemon re-hides its window.
+    ///
+    /// eframe reveals the window itself in `post_rendering` -- "we keep hidden
+    /// until we've painted something" -- which overrides the `with_visible(false)`
+    /// the daemon is created with. So the window has to be put back, *after* the
+    /// paint that reveals it. A couple of frames rather than one, because it is
+    /// cheap and the exact frame eframe chooses is not ours to depend on.
+    idle_hide_frames: u8,
 }
 
 struct Daemon {
@@ -194,6 +206,7 @@ impl BettershotApp {
             applied_theme: None,
             daemon: None,
             report_first_frame: true,
+            idle_hide_frames: IDLE_HIDE_FRAMES,
         }
     }
 
@@ -227,7 +240,14 @@ impl BettershotApp {
     /// always-on-top window belonging to another application would otherwise
     /// float over the very region the user is trying to drag out.
     pub fn starts_on_top(&self) -> bool {
-        matches!(self.stage, Stage::Selecting(_)) || self.config.always_on_top
+        match self.stage {
+            // Nothing to keep on top of: the daemon starts with no visible
+            // window, and asking the compositor to raise one that is not there
+            // is at best meaningless. The editor asks for itself when it opens.
+            Stage::Idle => false,
+            Stage::Selecting(_) => true,
+            _ => self.config.always_on_top,
+        }
     }
 
     /// True when the process should start with no visible window.
@@ -352,6 +372,7 @@ impl BettershotApp {
             ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(false));
             self.stage = Stage::Idle;
+            self.idle_hide_frames = IDLE_HIDE_FRAMES;
         } else {
             self.stage = Stage::Done;
             self.finished = true;
@@ -441,6 +462,13 @@ impl eframe::App for BettershotApp {
 
         match &mut self.stage {
             Stage::Idle => {
+                // eframe shows the window after the frame it first paints,
+                // regardless of `with_visible(false)`, so an idle daemon has to
+                // put it back or it sits there as an empty dark rectangle.
+                if self.idle_hide_frames > 0 {
+                    self.idle_hide_frames -= 1;
+                    ctx.send_viewport_cmd(egui::ViewportCommand::Visible(false));
+                }
                 // Keep waking up: a hidden window receives no input of its own.
                 ctx.request_repaint_after(IDLE_POLL);
                 self.act_on(&ctx, pending);
@@ -651,6 +679,26 @@ mod tests {
         let app = BettershotApp::selecting(Config::default(), overlay);
         assert!(app.starts_fullscreen());
         assert!(!app.starts_hidden());
+    }
+
+    #[test]
+    fn an_idle_daemon_keeps_re_hiding_its_window() {
+        // eframe reveals the window itself after the frame it first paints,
+        // overriding `with_visible(false)`, so `--daemon` showed an empty dark
+        // rectangle. The countdown is what puts it back.
+        let app = BettershotApp::idle(inert_daemon()).expect("construction should succeed");
+        assert!(app.starts_hidden(), "a daemon starts with no window");
+        assert!(
+            app.idle_hide_frames > 0,
+            "it must re-hide after eframe reveals it"
+        );
+    }
+
+    #[test]
+    fn an_invisible_daemon_does_not_ask_to_be_on_top() {
+        // There is no window to raise, and always-on-top defaults to on.
+        let app = BettershotApp::idle(inert_daemon()).expect("construction should succeed");
+        assert!(!app.starts_on_top());
     }
 
     #[test]
