@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.1](https://github.com/hairbui76/bettershot/compare/v0.8.0...v0.8.1) (2026-08-25)
+
+
+### Bug Fixes
+
+* **windows:** no console window, and no unrenderable glyphs ([7c7a9bf](https://github.com/hairbui76/bettershot/commit/7c7a9bf00f8358dc0622db3ef50562b4aafd79c6))
+
 ## [0.8.0](https://github.com/hairbui76/bettershot/compare/v0.7.0...v0.8.0) (2026-08-24)
 
 
