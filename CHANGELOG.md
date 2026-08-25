@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.3](https://github.com/hairbui76/bettershot/compare/v0.8.2...v0.8.3) (2026-08-25)
+
+
+### Bug Fixes
+
+* **daemon:** stop the empty window appearing in resident mode ([a9b1f12](https://github.com/hairbui76/bettershot/commit/a9b1f12e53e3fa1a51e7a0023c6b9df899d65ef8))
+
 ## [0.8.2](https://github.com/hairbui76/bettershot/compare/v0.8.1...v0.8.2) (2026-08-25)
 
 

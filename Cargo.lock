@@ -370,7 +370,7 @@ checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
 name = "bettershot"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "anyhow",
  "arboard",
@@ -400,7 +400,7 @@ dependencies = [
 
 [[package]]
 name = "bettershot-capture"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ashpd",
  "bettershot-core",
@@ -421,7 +421,7 @@ dependencies = [
 
 [[package]]
 name = "bettershot-cli"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "bettershot-core",
  "chrono",
@@ -436,7 +436,7 @@ dependencies = [
 
 [[package]]
 name = "bettershot-core"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "log",
  "serde",
@@ -446,7 +446,7 @@ dependencies = [
 
 [[package]]
 name = "bettershot-render"
-version = "0.8.2"
+version = "0.8.3"
 dependencies = [
  "ab_glyph",
  "bettershot-core",
