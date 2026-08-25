@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.2](https://github.com/hairbui76/bettershot/compare/v0.8.1...v0.8.2) (2026-08-25)
+
+
+### Bug Fixes
+
+* **windows:** create the tray icon and hotkeys inside the event loop ([5e3d549](https://github.com/hairbui76/bettershot/commit/5e3d549a5400b7f2b6d33b6fe64ae8d637a3eae8))
+
 ## [0.8.1](https://github.com/hairbui76/bettershot/compare/v0.8.0...v0.8.1) (2026-08-25)
 
 
