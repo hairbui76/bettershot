@@ -2,6 +2,36 @@
 //!
 //! Each entry point is a no-op on the platforms it does not apply to, so the
 //! call sites stay free of `cfg` noise.
+#![cfg_attr(target_os = "windows", allow(unsafe_code))]
+
+/// Re-attach to the terminal that launched us, if there was one.
+///
+/// bettershot is built for the Windows subsystem so that launching it does not
+/// flash up a console -- see the note at the top of `main.rs`. The side effect
+/// is that the process starts with no standard handles, so anything printed
+/// goes nowhere: `--help`, `--man`, `--license`, shell completions and
+/// `--output-filename -` would all appear to do nothing when run from a
+/// terminal.
+///
+/// `AttachConsole(ATTACH_PARENT_PROCESS)` borrows the parent's console when
+/// there is one, restoring all of that, and fails harmlessly when there is not
+/// -- which is the normal case for a Start-menu shortcut or the login
+/// autostart, and exactly when a console *should* not appear.
+///
+/// A no-op everywhere else: only Windows distinguishes the two subsystems.
+pub fn attach_parent_console() {
+    #[cfg(target_os = "windows")]
+    {
+        // SAFETY: a plain FFI call taking a constant and touching no memory of
+        // ours. It returns 0 when there is no parent console, which is not an
+        // error worth reporting -- there is nowhere to report it to.
+        unsafe {
+            windows_sys::Win32::System::Console::AttachConsole(
+                windows_sys::Win32::System::Console::ATTACH_PARENT_PROCESS,
+            );
+        }
+    }
+}
 
 /// Tell the OS this process is a background utility rather than a normal app.
 ///

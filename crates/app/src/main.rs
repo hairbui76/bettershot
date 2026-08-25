@@ -1,3 +1,14 @@
+// Windows opens a console window for a console-subsystem binary, every launch.
+// bettershot is a GUI program, so that terminal is pure noise -- and it appears
+// in the user's own screenshots, which for a screenshot tool is worse than
+// noise. Building for the windows subsystem stops it.
+//
+// The cost is that a GUI-subsystem process starts with no standard handles at
+// all, so `--help`, `--man`, shell completions and `--output-filename -` would
+// write into nothing when run from a terminal. `platform::attach_parent_console`
+// puts those back when there is a parent console to attach to.
+#![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+
 //! bettershot — cross-platform screenshot capture and annotation.
 //!
 //! `main` owns the process: parse arguments, resolve the configuration, obtain
@@ -44,6 +55,9 @@ pub(crate) fn since_start() -> Option<std::time::Duration> {
 }
 
 fn main() -> Result<()> {
+    // Before anything can print: see the note at the top of this file.
+    platform::attach_parent_console();
+
     let _ = STARTED.set(std::time::Instant::now());
     let args = Args::parse();
     env_logger::Builder::new()

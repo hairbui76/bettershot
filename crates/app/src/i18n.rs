@@ -310,3 +310,99 @@ mod tests {
         assert_eq!(catalog.language(), Language::English);
     }
 }
+
+#[cfg(test)]
+mod renderable_glyph_tests {
+    /// Every character this crate puts on screen must exist in the font egui
+    /// actually renders it with.
+    ///
+    /// egui bundles Ubuntu-Light (proportional), Hack (monospace) and two emoji
+    /// faces. Buttons and labels use the *proportional* one, and a character
+    /// missing from it renders as an empty box — which no test catches, because
+    /// nothing here ever draws a frame. Two shipped that way: `↶` and `↷` on the
+    /// undo/redo buttons, which exist only in the monospace font, and `✕` on the
+    /// overlay's close button, which is in none of them.
+    ///
+    /// So: string literals are ASCII, except for the few characters below that
+    /// were checked against the bundled fonts' cmap tables by hand.
+    const VERIFIED: &[char] = &[
+        '·', // U+00B7 middle dot   — Ubuntu-Light + Hack
+        '×', // U+00D7 multiply     — Ubuntu-Light + Hack
+        '—', // U+2014 em dash      — Ubuntu-Light + Hack
+        '…', // U+2026 ellipsis     — Ubuntu-Light + Hack
+    ];
+
+    /// The contents of every double-quoted literal in `source`, skipping `//`
+    /// comments so that prose in doc comments is not mistaken for UI text.
+    fn string_literals(source: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        for line in source.lines() {
+            let code = match line.find("//") {
+                // Not a comment marker if it is inside a literal; the only such
+                // case in this crate is a URL, which is ASCII either way.
+                Some(i) if line[..i].matches('"').count() % 2 == 0 => &line[..i],
+                _ => line,
+            };
+            let mut rest = code;
+            while let Some(start) = rest.find('"') {
+                let after = &rest[start + 1..];
+                let Some(end) = after.find('"') else { break };
+                out.push(after[..end].to_owned());
+                rest = &after[end + 1..];
+            }
+        }
+        out
+    }
+
+    #[test]
+    fn no_ui_string_uses_a_character_the_bundled_font_lacks() {
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/src");
+        let mut offenders: Vec<String> = Vec::new();
+
+        let mut stack = vec![std::path::PathBuf::from(root)];
+        while let Some(dir) = stack.pop() {
+            for entry in std::fs::read_dir(&dir).expect("the source directory should be readable") {
+                let path = entry.expect("a readable entry").path();
+                if path.is_dir() {
+                    stack.push(path);
+                    continue;
+                }
+                if path.extension().is_none_or(|e| e != "rs") {
+                    continue;
+                }
+                let source = std::fs::read_to_string(&path).expect("valid UTF-8 source");
+                for literal in string_literals(&source) {
+                    for ch in literal.chars() {
+                        if ch.is_ascii() || VERIFIED.contains(&ch) {
+                            continue;
+                        }
+                        offenders.push(format!(
+                            "{}: {ch:?} (U+{:04X}) in {literal:?}",
+                            path.file_name().unwrap_or_default().to_string_lossy(),
+                            ch as u32
+                        ));
+                    }
+                }
+            }
+        }
+
+        assert!(
+            offenders.is_empty(),
+            "these characters may not render in egui's proportional font.\n\
+             Check the cmap of epaint_default_fonts' Ubuntu-Light.ttf, then either \
+             use plain text or add the character to VERIFIED:\n  {}",
+            offenders.join("\n  ")
+        );
+    }
+
+    #[test]
+    fn the_scanner_ignores_comments_and_finds_real_literals() {
+        // Guard the guard: a scanner that silently matched nothing would make
+        // the test above pass forever.
+        // Escapes, not the characters themselves: this fixture is inside a file
+        // the scanner walks, and a literal here would report itself.
+        let source = "// a comment with \u{21B6} in it\nlet x = \"hi \u{2715} there\";\n";
+        let found = string_literals(source);
+        assert_eq!(found, vec!["hi \u{2715} there".to_owned()]);
+    }
+}

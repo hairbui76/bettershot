@@ -57,6 +57,10 @@ tray-icon = { version = "0.24", optional = true }
 # macOS. Pure-Rust AppKit bindings, so `cargo clippy --target
 # aarch64-apple-darwin` type-checks this from a Linux machine. Only the
 # activation-policy call is used; the feature list is trimmed to match.
+# Windows. Only to re-attach the parent console; see crates/app/src/platform.rs.
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.60", features = ["Win32_Foundation", "Win32_System_Console"] }
+
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2-app-kit = { version = "0.3", default-features = false, features = [
     "std",

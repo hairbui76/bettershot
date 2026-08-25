@@ -400,7 +400,7 @@ impl Overlay {
 
                             ui.separator();
 
-                            if ui.button("✕").on_hover_text("Cancel  (Esc)").clicked() {
+                            if ui.button("Cancel").on_hover_text("Esc").clicked() {
                                 self.outcome = Selection::Cancelled;
                             }
                         });

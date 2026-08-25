@@ -730,15 +730,21 @@ impl Editor {
                 }
                 ui.separator();
                 if ui
-                    .add_enabled(self.scene.can_undo(), egui::Button::new("↶"))
-                    .on_hover_text(format!("{} (Ctrl+Z)", self.strings.get("action.undo")))
+                    .add_enabled(
+                        self.scene.can_undo(),
+                        egui::Button::new(self.strings.get("action.undo")),
+                    )
+                    .on_hover_text("Ctrl+Z")
                     .clicked()
                 {
                     self.undo();
                 }
                 if ui
-                    .add_enabled(self.scene.can_redo(), egui::Button::new("↷"))
-                    .on_hover_text(format!("{} (Ctrl+Y)", self.strings.get("action.redo")))
+                    .add_enabled(
+                        self.scene.can_redo(),
+                        egui::Button::new(self.strings.get("action.redo")),
+                    )
+                    .on_hover_text("Ctrl+Y")
                     .clicked()
                 {
                     self.redo();
